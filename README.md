@@ -97,8 +97,8 @@ Options:
       --dry-run                    Display path resolution results only (no files are collected)
       --zip                        Generate a ZIP archive after collection
       --mem                        Capture memory dump with tools\winpmem*.exe (runs before collection)
-      --vss <MODE>                 Collect from Volume Shadow Copy snapshots instead of the live volume.
-                   Modes: none (default), latest, all
+      --vss                        Collect from all discovered Volume Shadow Copy snapshots
+                                   and always include the live volume.
       --volume <LETTER>            Override the source drive letter for all artifact collection.
                                    Useful when running washi.exe from a USB drive (e.g., D:) and
                                    targeting the system drive (C:) — default behavior collects from C:.
@@ -190,11 +190,8 @@ washi.exe --category '!EventLogs' --category '!WMI'
 # Show every collected file (verbose output)
 washi.exe --verbose
 
-# Collect from the latest Volume Shadow Copy snapshot
-washi.exe --vss latest
-
-# Collect from all discovered Volume Shadow Copy snapshots
-washi.exe --vss all
+# Collect from all discovered Volume Shadow Copy snapshots + live volume
+washi.exe --vss
 
 # Verify collection targets (no files are written)
 washi.exe --dry-run
@@ -206,7 +203,7 @@ washi.exe --output D:\evidence\case001 --zip
 washi.exe --volume D --output E:\evidence\case001
 
 # Dry-run with VSS path expansion
-washi.exe --vss latest --dry-run
+washi.exe --vss --dry-run
 
 # YARA scan (scan persistence paths and collect detected files into infected.zip)
 washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out

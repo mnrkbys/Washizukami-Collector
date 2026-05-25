@@ -8,8 +8,6 @@ use colored::Colorize;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-use crate::vss::VssMode;
-
 const SEP_WIDTH: usize = 56;
 
 // ── Initialisation ────────────────────────────────────────────────────────────
@@ -36,7 +34,7 @@ fn config_row(label: &str, value: &str) {
 pub fn print_header(
     hostname: &str,
     volume_override: Option<char>,
-    vss_mode: VssMode,
+    vss_enabled: bool,
     dry_run: bool,
     verbose: bool,
     artifact_count: usize,
@@ -58,8 +56,8 @@ pub fn print_header(
         config_row("Volume", &format!("{v}: (override)"));
     }
 
-    if vss_mode.enabled() {
-        config_row("VSS", vss_mode.label());
+    if vss_enabled {
+        config_row("VSS", "enabled (all snapshots + live)");
     }
 
     let mode = if dry_run {

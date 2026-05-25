@@ -17,7 +17,6 @@ use config::CollectionFilter;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use vss::VssMode;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
@@ -69,13 +68,10 @@ struct Cli {
     #[arg(long)]
     mem: bool,
 
-    /// Resolve collection targets from Volume Shadow Copy snapshots.
-    ///
-    /// none   : use the live filesystem only (default)
-    /// latest : use the most recent shadow copy for each volume
-    /// all    : collect from every discovered shadow copy for each volume
-    #[arg(long, value_enum, default_value_t = VssMode::None)]
-    vss: VssMode,
+    /// Collect from all discovered Volume Shadow Copy snapshots and always
+    /// include the live volume paths.
+    #[arg(long)]
+    vss: bool,
 
     /// Show every collected file instead of one summary line per category.
     #[arg(short, long)]
@@ -135,7 +131,7 @@ fn run(no_args: bool) -> Result<()> {
             zip: false,
             volume: None,
             mem: false,
-            vss: VssMode::None,
+            vss: false,
             verbose: false,
         }
     } else {
@@ -276,7 +272,10 @@ fn run(no_args: bool) -> Result<()> {
         // Apply volume override: replace the drive letter in the artifact path
         // with the user-specified drive letter (e.g. --volume D turns C:\ into D:\).
         let target_path = apply_volume_override(&def.target_path, cli.volume);
-        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(&target_path, cli.vss) {
+        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(
+            &target_path,
+            cli.vss,
+        ) {
             Ok(value) => value,
             Err(e) => {
                 if cli.verbose {
@@ -294,10 +293,9 @@ fn run(no_args: bool) -> Result<()> {
             }
         };
 
-        if cli.vss.enabled() {
+        if cli.vss {
             let msg = format!(
-                "VSS {}: '{}' expanded to {} pattern(s)",
-                cli.vss.label(),
+                "VSS enabled: '{}' expanded to {} pattern(s) [all snapshots + live]",
                 target_path,
                 pattern_count
             );
@@ -406,14 +404,18 @@ fn run(no_args: bool) -> Result<()> {
 
 // ── Dry-run ───────────────────────────────────────────────────────────────────
 
-fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>, vss_mode: VssMode) {
+fn run_dry(
+    definitions: &[config::ArtifactDefinition],
+    volume: Option<char>,
+    vss_enabled: bool,
+) {
     let mut total_paths: usize = 0;
     let mut total_bytes: u64 = 0;
     let mut unknown_size_count: usize = 0;
 
     for def in definitions {
         let target_path = apply_volume_override(&def.target_path, volume);
-        let resolved = match resolve_source_paths(&target_path, vss_mode) {
+        let resolved = match resolve_source_paths(&target_path, vss_enabled) {
             Ok(p) => p,
             Err(e) => {
                 ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
@@ -445,13 +447,16 @@ fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>, vss
     ui::print_dry_summary(definitions.len(), total_paths, total_bytes, unknown_size_count);
 }
 
-fn resolve_source_paths(target_path: &str, vss_mode: VssMode) -> Result<Vec<PathBuf>> {
-    let (resolved, _) = resolve_source_paths_with_patterns(target_path, vss_mode)?;
+fn resolve_source_paths(target_path: &str, vss_enabled: bool) -> Result<Vec<PathBuf>> {
+    let (resolved, _) = resolve_source_paths_with_patterns(target_path, vss_enabled)?;
     Ok(resolved)
 }
 
-fn resolve_source_paths_with_patterns(target_path: &str, vss_mode: VssMode) -> Result<(Vec<PathBuf>, usize)> {
-    let patterns = vss::expand_shadow_patterns(target_path, vss_mode)?;
+fn resolve_source_paths_with_patterns(
+    target_path: &str,
+    vss_enabled: bool,
+) -> Result<(Vec<PathBuf>, usize)> {
+    let patterns = vss::expand_shadow_patterns(target_path, vss_enabled)?;
     let pattern_count = patterns.len();
     let mut resolved = Vec::new();
     let mut seen = HashSet::new();

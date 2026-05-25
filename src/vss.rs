@@ -1,37 +1,8 @@
-use clap::ValueEnum;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 use serde::Deserialize;
-
-/// Volume Shadow Copy usage mode for artifact collection.
-///
-/// `None` preserves the current live-system collection path.
-/// `Latest` and `All` are wired through the CLI/UI first; the collection
-/// pipeline will be taught to resolve snapshot-backed paths in follow-up
-/// changes.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, ValueEnum)]
-pub enum VssMode {
-    #[default]
-    None,
-    Latest,
-    All,
-}
-
-impl VssMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::None => "disabled",
-            Self::Latest => "latest snapshot",
-            Self::All => "all snapshots",
-        }
-    }
-
-    pub fn enabled(self) -> bool {
-        !matches!(self, Self::None)
-    }
-}
 
 /// Metadata for a discovered Volume Shadow Copy snapshot.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,8 +60,8 @@ pub fn map_live_path_to_snapshot(snapshot: &ShadowCopy, live_path: &Path) -> Opt
     Some(PathBuf::from(mapped))
 }
 
-pub fn expand_shadow_patterns(target_path: &str, mode: VssMode) -> Result<Vec<String>> {
-    if !mode.enabled() {
+pub fn expand_shadow_patterns(target_path: &str, vss_enabled: bool) -> Result<Vec<String>> {
+    if !vss_enabled {
         return Ok(vec![target_path.to_owned()]);
     }
 
@@ -105,7 +76,7 @@ pub fn expand_shadow_patterns(target_path: &str, mode: VssMode) -> Result<Vec<St
 
     let mut snapshots = snapshots_for_volume(&drive)?;
     if snapshots.is_empty() {
-        bail!("no shadow copies found for volume {drive}");
+        return Ok(vec![target_path.to_owned()]);
     }
 
     snapshots.sort_by(|left, right| {
@@ -115,10 +86,6 @@ pub fn expand_shadow_patterns(target_path: &str, mode: VssMode) -> Result<Vec<St
             .then_with(|| left.device_object.cmp(&right.device_object))
     });
 
-    if matches!(mode, VssMode::Latest) {
-        snapshots.truncate(1);
-    }
-
     let mut patterns = Vec::with_capacity(snapshots.len());
     for snapshot in snapshots {
         if let Some(mapped) = map_live_path_to_snapshot(&snapshot, Path::new(target_path)) {
@@ -127,8 +94,11 @@ pub fn expand_shadow_patterns(target_path: &str, mode: VssMode) -> Result<Vec<St
     }
 
     if patterns.is_empty() {
-        bail!("failed to map target path '{target_path}' into a shadow copy path");
+        return Ok(vec![target_path.to_owned()]);
     }
+
+    // VSS collection always includes the live path as a baseline source.
+    patterns.push(target_path.to_owned());
 
     Ok(patterns)
 }
