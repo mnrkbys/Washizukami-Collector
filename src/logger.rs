@@ -100,6 +100,12 @@ impl AuditLogger {
         self.write_line(&line);
     }
 
+    /// Log an informational line not tied to a specific collection result.
+    pub fn log_info(&mut self, msg: &str) {
+        let line = format!("{} [INFO ] [{:<12}] {}", timestamp(), "-", msg);
+        self.write_line(&line);
+    }
+
     /// Log the final summary line.
     pub fn log_summary(&mut self, n_ok: usize, n_skip: usize, n_fail: usize) {
         let line = format!(

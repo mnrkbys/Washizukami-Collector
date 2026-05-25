@@ -133,7 +133,7 @@ pub fn expand_env_vars(path: &str) -> String {
 pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
     let expanded = expand_env_vars(raw_path);
 
-    let has_glob = expanded.contains('*') || expanded.contains('?') || expanded.contains('[');
+    let has_glob = contains_glob_metacharacters(&expanded);
 
     if !has_glob {
         return Ok(vec![PathBuf::from(expanded)]);
@@ -141,7 +141,7 @@ pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
 
     // Normalise Windows backslashes to forward slashes so the glob engine
     // treats them as path separators rather than escape characters.
-    let pattern = expanded.replace('\\', "/");
+    let pattern = glob_pattern(&expanded);
 
     let opts = glob::MatchOptions {
         // NTFS is case-insensitive; honour that in pattern matching.
@@ -167,6 +167,20 @@ pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
     }
 
     Ok(results)
+}
+
+fn contains_glob_metacharacters(path: &str) -> bool {
+    let scan = path.strip_prefix(r"\\?\").unwrap_or(path);
+    scan.contains('*') || scan.contains('?') || scan.contains('[')
+}
+
+fn glob_pattern(path: &str) -> String {
+    let pattern = path.replace('\\', "/");
+    if let Some(rest) = pattern.strip_prefix("//?/") {
+        format!("//[?]/{rest}")
+    } else {
+        pattern
+    }
 }
 
 #[cfg(test)]
@@ -273,5 +287,20 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn extended_prefix_question_mark_is_not_treated_as_glob() {
+        assert!(!contains_glob_metacharacters(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM"
+        ));
+    }
+
+    #[test]
+    fn extended_prefix_is_escaped_for_glob_engine() {
+        assert_eq!(
+            glob_pattern(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Users\*\NTUSER.DAT"),
+            "//[?]/GLOBALROOT/Device/HarddiskVolumeShadowCopy3/Users/*/NTUSER.DAT"
+        );
     }
 }

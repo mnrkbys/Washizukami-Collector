@@ -7,6 +7,7 @@ mod path_resolver;
 mod privileges;
 mod scan;
 mod ui;
+mod vss;
 
 use anyhow::{Context, Result};
 use chrono::Local;
@@ -16,6 +17,7 @@ use config::CollectionFilter;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use vss::VssMode;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
 
@@ -66,6 +68,14 @@ struct Cli {
     /// The dump is written to <output_dir>/memory.dmp.
     #[arg(long)]
     mem: bool,
+
+    /// Resolve collection targets from Volume Shadow Copy snapshots.
+    ///
+    /// none   : use the live filesystem only (default)
+    /// latest : use the most recent shadow copy for each volume
+    /// all    : collect from every discovered shadow copy for each volume
+    #[arg(long, value_enum, default_value_t = VssMode::None)]
+    vss: VssMode,
 
     /// Show every collected file instead of one summary line per category.
     #[arg(short, long)]
@@ -125,6 +135,7 @@ fn run(no_args: bool) -> Result<()> {
             zip: false,
             volume: None,
             mem: false,
+            vss: VssMode::None,
             verbose: false,
         }
     } else {
@@ -193,6 +204,7 @@ fn run(no_args: bool) -> Result<()> {
     ui::print_header(
         &hostname,
         cli.volume,
+        cli.vss,
         cli.dry_run,
         cli.verbose,
         definitions.len(),
@@ -202,7 +214,7 @@ fn run(no_args: bool) -> Result<()> {
 
     // ── Dry-run path: resolve and print, then exit ───────────────────────────
     if cli.dry_run {
-        run_dry(&definitions, cli.volume);
+        run_dry(&definitions, cli.volume, cli.vss);
         return Ok(());
     }
 
@@ -264,8 +276,8 @@ fn run(no_args: bool) -> Result<()> {
         // Apply volume override: replace the drive letter in the artifact path
         // with the user-specified drive letter (e.g. --volume D turns C:\ into D:\).
         let target_path = apply_volume_override(&def.target_path, cli.volume);
-        let resolved = match path_resolver::resolve_path(&target_path) {
-            Ok(paths) => paths,
+        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(&target_path, cli.vss) {
+            Ok(value) => value,
             Err(e) => {
                 if cli.verbose {
                     ui::print_warn(&format!(
@@ -281,6 +293,19 @@ fn run(no_args: bool) -> Result<()> {
                 continue;
             }
         };
+
+        if cli.vss.enabled() {
+            let msg = format!(
+                "VSS {}: '{}' expanded to {} pattern(s)",
+                cli.vss.label(),
+                target_path,
+                pattern_count
+            );
+            audit.log_info(&msg);
+            if cli.verbose {
+                ui::print_info(&msg);
+            }
+        }
 
         if resolved.is_empty() {
             if cli.verbose {
@@ -381,14 +406,14 @@ fn run(no_args: bool) -> Result<()> {
 
 // ── Dry-run ───────────────────────────────────────────────────────────────────
 
-fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>) {
+fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>, vss_mode: VssMode) {
     let mut total_paths: usize = 0;
     let mut total_bytes: u64 = 0;
     let mut unknown_size_count: usize = 0;
 
     for def in definitions {
         let target_path = apply_volume_override(&def.target_path, volume);
-        let resolved = match path_resolver::resolve_path(&target_path) {
+        let resolved = match resolve_source_paths(&target_path, vss_mode) {
             Ok(p) => p,
             Err(e) => {
                 ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
@@ -418,6 +443,28 @@ fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>) {
     }
 
     ui::print_dry_summary(definitions.len(), total_paths, total_bytes, unknown_size_count);
+}
+
+fn resolve_source_paths(target_path: &str, vss_mode: VssMode) -> Result<Vec<PathBuf>> {
+    let (resolved, _) = resolve_source_paths_with_patterns(target_path, vss_mode)?;
+    Ok(resolved)
+}
+
+fn resolve_source_paths_with_patterns(target_path: &str, vss_mode: VssMode) -> Result<(Vec<PathBuf>, usize)> {
+    let patterns = vss::expand_shadow_patterns(target_path, vss_mode)?;
+    let pattern_count = patterns.len();
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+
+    for pattern in patterns {
+        for path in path_resolver::resolve_path(&pattern)? {
+            if seen.insert(path.clone()) {
+                resolved.push(path);
+            }
+        }
+    }
+
+    Ok((resolved, pattern_count))
 }
 
 // ── Volume override ───────────────────────────────────────────────────────────

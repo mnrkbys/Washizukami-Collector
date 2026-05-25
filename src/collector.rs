@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf, Prefix};
 
 use crate::config::{ArtifactDefinition, CollectionMethod};
 use crate::ntfs_reader::NtfsReader;
+use crate::vss;
 
 // ── Result types ─────────────────────────────────────────────────────────────
 
@@ -71,14 +72,17 @@ pub trait Collector {
 /// [`RawCollector`] fallback.
 pub struct StandardCollector;
 
-impl Collector for StandardCollector {
-    fn collect(&mut self, source: &Path, dest: &Path) -> Result<CollectionResult> {
+impl StandardCollector {
+    fn collect_open_path(
+        &mut self,
+        source: &Path,
+        open_path: &Path,
+        dest: &Path,
+    ) -> Result<CollectionResult> {
         ensure_parent(dest)?;
 
-        // Open source — propagate the raw IO error so the dispatcher can
-        // inspect io::Error::kind() / raw_os_error().
-        let mut src = File::open(source)
-            .with_context(|| format!("cannot open '{}'", source.display()))?;
+        let mut src = File::open(open_path)
+            .with_context(|| format!("cannot open '{}'", open_path.display()))?;
 
         let out = File::create(dest)
             .with_context(|| format!("cannot create '{}'", dest.display()))?;
@@ -96,6 +100,17 @@ impl Collector for StandardCollector {
             fell_back: false,
             status: CollectionStatus::Success,
         })
+    }
+
+    fn collect_stream(&mut self, source: &Path, stream: &str, dest: &Path) -> Result<CollectionResult> {
+        let open_path = PathBuf::from(format!("{}:{}", source.display(), stream));
+        self.collect_open_path(source, &open_path, dest)
+    }
+}
+
+impl Collector for StandardCollector {
+    fn collect(&mut self, source: &Path, dest: &Path) -> Result<CollectionResult> {
+        self.collect_open_path(source, source, dest)
     }
 }
 
@@ -211,6 +226,19 @@ pub fn collect_artifact(
     raw_collector: &mut RawCollector,
 ) -> CollectionResult {
     let dest = build_dest(output_base, &def.category, source_path, def.stream.as_deref());
+
+    if vss::is_snapshot_path(source_path) {
+        let mut std_col = StandardCollector;
+        if let Some(stream) = &def.stream {
+            return std_col
+                .collect_stream(source_path, stream, &dest)
+                .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::File, e));
+        }
+
+        return std_col
+            .collect(source_path, &dest)
+            .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::File, e));
+    }
 
     // Alternate Data Stream artifacts can only be read via NTFS raw access.
     if let Some(stream) = &def.stream {

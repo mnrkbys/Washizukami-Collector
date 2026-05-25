@@ -30,9 +30,11 @@ strip         = "symbols"   # strip debug symbols from the final EXE
 # panic = "abort" は ntfs クレートの proc-macro (strum_macros) と干渉するため除外
 
 [target.'cfg(windows)'.dependencies]
+wmi = "0.18"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Storage_FileSystem",
     "Win32_System_Threading",
     "Win32_System_IO",
     "Win32_System_Ioctl",
