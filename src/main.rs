@@ -272,7 +272,7 @@ fn run(no_args: bool) -> Result<()> {
         // Apply volume override: replace the drive letter in the artifact path
         // with the user-specified drive letter (e.g. --volume D turns C:\ into D:\).
         let target_path = apply_volume_override(&def.target_path, cli.volume);
-        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(
+        let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(
             &target_path,
             cli.vss,
         ) {
@@ -296,7 +296,7 @@ fn run(no_args: bool) -> Result<()> {
         if cli.vss {
             let msg = format!(
                 "VSS enabled: '{}' expanded to {} pattern(s) [all snapshots + live]",
-                target_path,
+                expanded_target_path,
                 pattern_count
             );
             audit.log_info(&msg);
@@ -310,10 +310,10 @@ fn run(no_args: bool) -> Result<()> {
                 ui::print_skip(
                     &def.category,
                     &def.name,
-                    &format!("no files matched '{}'", target_path),
+                    &format!("no files matched '{}'", expanded_target_path),
                 );
             }
-            audit.log_warn(&format!("no paths matched: {}", target_path));
+            audit.log_warn(&format!("no paths matched: {}", expanded_target_path));
             n_skip += 1;
             cat_skip += 1;
             continue;
@@ -415,24 +415,24 @@ fn run_dry(
 
     for def in definitions {
         let target_path = apply_volume_override(&def.target_path, volume);
-        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
+        let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
             Ok(value) => value,
             Err(e) => {
                 ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                (vec![], 0)
+                (vec![], 0, target_path.clone())
             }
         };
 
         if vss_enabled {
             ui::print_info(&format!(
                 "VSS expanded '{}' to {} pattern(s) [all snapshots + live]",
-                target_path,
+                expanded_target_path,
                 pattern_count
             ));
         }
 
         if resolved.is_empty() {
-            ui::print_dry_no_match(&def.category, &def.name, &target_path);
+            ui::print_dry_no_match(&def.category, &def.name, &expanded_target_path);
         } else {
             for path in &resolved {
                 let size_str = match std::fs::metadata(path) {
@@ -458,8 +458,9 @@ fn run_dry(
 fn resolve_source_paths_with_patterns(
     target_path: &str,
     vss_enabled: bool,
-) -> Result<(Vec<PathBuf>, usize)> {
-    let patterns = vss::expand_shadow_patterns(target_path, vss_enabled)?;
+) -> Result<(Vec<PathBuf>, usize, String)> {
+    let expanded_target_path = path_resolver::expand_env_vars(target_path);
+    let patterns = vss::expand_shadow_patterns(&expanded_target_path, vss_enabled)?;
     let pattern_count = patterns.len();
     let mut resolved = Vec::new();
     let mut seen = HashSet::new();
@@ -472,7 +473,7 @@ fn resolve_source_paths_with_patterns(
         }
     }
 
-    Ok((resolved, pattern_count))
+    Ok((resolved, pattern_count, expanded_target_path))
 }
 
 // ── Volume override ───────────────────────────────────────────────────────────
