@@ -27,6 +27,7 @@
 /// No extra handling is needed in the caller — just pass the wildcard path to
 /// `resolve_path` and iterate the results.
 use anyhow::{Context, Result};
+use glob::{MatchOptions, Pattern};
 use std::path::PathBuf;
 
 /// Expand `%VAR%`, `$VAR`, and `${VAR}` style environment variable references
@@ -139,6 +140,13 @@ pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
         return Ok(vec![PathBuf::from(expanded)]);
     }
 
+    // Windows device-namespace paths (e.g. \\?\GLOBALROOT\...) do not play
+    // well with glob crate's UNC-oriented prefix handling. Expand them by
+    // traversing directories component-by-component.
+    if is_device_namespace_path(&expanded) {
+        return resolve_device_glob_path(&expanded);
+    }
+
     // Normalise Windows backslashes to forward slashes so the glob engine
     // treats them as path separators rather than escape characters.
     let pattern = glob_pattern(&expanded);
@@ -180,6 +188,107 @@ fn glob_pattern(path: &str) -> String {
         format!("//[?]/{rest}")
     } else {
         pattern
+    }
+}
+
+fn is_device_namespace_path(path: &str) -> bool {
+    path.to_ascii_uppercase().starts_with(r"\\?\GLOBALROOT\")
+}
+
+fn resolve_device_glob_path(path: &str) -> Result<Vec<PathBuf>> {
+    let (base, segments) = parse_device_glob_pattern(path)
+        .with_context(|| format!("invalid device path pattern: {path}"))?;
+    expand_device_segments(base, &segments)
+}
+
+fn parse_device_glob_pattern(path: &str) -> Result<(PathBuf, Vec<String>)> {
+    let normalized = path.replace('/', "\\");
+    let tail = normalized
+        .strip_prefix(r"\\?\")
+        .ok_or_else(|| anyhow::anyhow!("not an extended path"))?;
+
+    let parts: Vec<&str> = tail.split('\\').filter(|s| !s.is_empty()).collect();
+    if parts.is_empty() {
+        return Err(anyhow::anyhow!("empty extended path"));
+    }
+
+    let first_glob = parts
+        .iter()
+        .position(|p| contains_glob_metacharacters(p))
+        .ok_or_else(|| anyhow::anyhow!("no glob metacharacters"))?;
+
+    if first_glob == 0 {
+        return Err(anyhow::anyhow!("cannot glob within device prefix root"));
+    }
+
+    let base = PathBuf::from(format!(r"\\?\{}", parts[..first_glob].join("\\")));
+    let segments = parts[first_glob..]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+
+    Ok((base, segments))
+}
+
+fn expand_device_segments(base: PathBuf, segments: &[String]) -> Result<Vec<PathBuf>> {
+    if segments.is_empty() {
+        if base.exists() {
+            return Ok(vec![base]);
+        }
+        return Ok(vec![]);
+    }
+
+    let head = &segments[0];
+    let tail = &segments[1..];
+
+    if contains_glob_metacharacters(head) {
+        let pattern = Pattern::new(head)
+            .with_context(|| format!("invalid glob component in device path: {head}"))?;
+        let opts = MatchOptions {
+            case_sensitive: false,
+            require_literal_separator: true,
+            require_literal_leading_dot: false,
+        };
+
+        let entries = match std::fs::read_dir(&base) {
+            Ok(v) => v,
+            Err(e) => {
+                // Missing/inaccessible branches are expected in user-profile
+                // wildcard expansion on VSS snapshots; skip only that branch.
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("warn: device glob cannot read '{}': {e}", base.display());
+                }
+                return Ok(vec![]);
+            }
+        };
+
+        let mut out = Vec::new();
+        for entry in entries {
+            match entry {
+                Ok(de) => {
+                    let name = de.file_name();
+                    let name = name.to_string_lossy();
+                    if pattern.matches_with(&name, opts) {
+                        match expand_device_segments(base.join(&*name), tail) {
+                            Ok(paths) => out.extend(paths),
+                            Err(e) => {
+                                eprintln!(
+                                    "warn: device glob branch failed for '{}\\{}': {e:#}",
+                                    base.display(),
+                                    name,
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("warn: device glob entry error: {e}");
+                }
+            }
+        }
+        Ok(out)
+    } else {
+        expand_device_segments(base.join(head), tail)
     }
 }
 
@@ -302,5 +411,63 @@ mod tests {
             glob_pattern(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Users\*\NTUSER.DAT"),
             "//[?]/GLOBALROOT/Device/HarddiskVolumeShadowCopy3/Users/*/NTUSER.DAT"
         );
+    }
+
+    #[test]
+    fn parse_device_glob_pattern_extracts_base_and_segments() {
+        let (base, segments) = parse_device_glob_pattern(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\Windows\Prefetch\*.pf",
+        )
+        .unwrap();
+
+        assert_eq!(
+            base,
+            PathBuf::from(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\Windows\Prefetch")
+        );
+        assert_eq!(segments, vec!["*.pf"]);
+    }
+
+    #[test]
+    fn device_glob_tolerates_missing_branches() {
+        let tmp = std::env::temp_dir().join("washi_vss_branch_tolerant");
+        let alice_recent = tmp
+            .join("Alice")
+            .join("AppData")
+            .join("Roaming")
+            .join("Microsoft")
+            .join("Windows")
+            .join("Recent");
+        let bob_root = tmp.join("Bob");
+
+        std::fs::create_dir_all(&alice_recent).unwrap();
+        std::fs::create_dir_all(&bob_root).unwrap();
+        std::fs::write(alice_recent.join("a.lnk"), b"x").unwrap();
+
+        let segments = vec![
+            "*".to_owned(),
+            "AppData".to_owned(),
+            "Roaming".to_owned(),
+            "Microsoft".to_owned(),
+            "Windows".to_owned(),
+            "Recent".to_owned(),
+            "*.lnk".to_owned(),
+        ];
+
+        let paths = expand_device_segments(tmp.clone(), &segments).unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].ends_with("a.lnk"));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn device_glob_nonexistent_base_returns_empty() {
+        let tmp = std::env::temp_dir().join("washi_vss_nonexistent_base");
+        if tmp.exists() {
+            std::fs::remove_dir_all(&tmp).unwrap();
+        }
+
+        let paths = expand_device_segments(tmp, &["*".to_owned()]).unwrap();
+        assert!(paths.is_empty());
     }
 }
