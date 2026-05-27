@@ -13,9 +13,6 @@ pub struct ShadowCopy {
     pub install_date: Option<String>,
 }
 
-impl ShadowCopy {
-}
-
 pub fn is_snapshot_path(path: &Path) -> bool {
     path.to_string_lossy()
         .to_ascii_uppercase()
@@ -126,7 +123,7 @@ pub fn snapshots_for_volume(volume: &str) -> Result<Vec<ShadowCopy>> {
 
     let mut snapshots = Vec::new();
     for row in rows {
-        if row.state != Some(9) {
+        if !is_collectable_shadow_state(row.state) {
             continue;
         }
 
@@ -193,6 +190,11 @@ fn normalize_volume_name(volume: impl AsRef<str>) -> String {
         .to_ascii_uppercase()
 }
 
+fn is_collectable_shadow_state(state: Option<u32>) -> bool {
+    // VSS_SNAPSHOT_STATE defines CREATED as 12.
+    matches!(state, Some(12))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,5 +250,18 @@ mod tests {
             normalize_volume_name(r"\\?\Volume{ABC}\"),
             normalize_volume_name(r"\\?\volume{abc}")
         );
+    }
+
+    #[test]
+    fn collectable_shadow_state_accepts_created_state_only() {
+        assert!(is_collectable_shadow_state(Some(12)));
+        assert!(!is_collectable_shadow_state(Some(9)));
+    }
+
+    #[test]
+    fn collectable_shadow_state_rejects_non_created_values() {
+        assert!(!is_collectable_shadow_state(None));
+        assert!(!is_collectable_shadow_state(Some(13)));
+        assert!(!is_collectable_shadow_state(Some(14)));
     }
 }

@@ -415,13 +415,21 @@ fn run_dry(
 
     for def in definitions {
         let target_path = apply_volume_override(&def.target_path, volume);
-        let resolved = match resolve_source_paths(&target_path, vss_enabled) {
-            Ok(p) => p,
+        let (resolved, pattern_count) = match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
+            Ok(value) => value,
             Err(e) => {
                 ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                vec![]
+                (vec![], 0)
             }
         };
+
+        if vss_enabled {
+            ui::print_info(&format!(
+                "VSS expanded '{}' to {} pattern(s) [all snapshots + live]",
+                target_path,
+                pattern_count
+            ));
+        }
 
         if resolved.is_empty() {
             ui::print_dry_no_match(&def.category, &def.name, &target_path);
@@ -445,11 +453,6 @@ fn run_dry(
     }
 
     ui::print_dry_summary(definitions.len(), total_paths, total_bytes, unknown_size_count);
-}
-
-fn resolve_source_paths(target_path: &str, vss_enabled: bool) -> Result<Vec<PathBuf>> {
-    let (resolved, _) = resolve_source_paths_with_patterns(target_path, vss_enabled)?;
-    Ok(resolved)
 }
 
 fn resolve_source_paths_with_patterns(
