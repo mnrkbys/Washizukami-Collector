@@ -279,6 +279,10 @@ pub fn collect_artifact(
 /// `C:\Windows\System32\config\SAM` with category `Registry`
 /// → `output/HOST/Registry/Windows/System32/config/SAM`
 pub fn build_dest_path(output_base: &Path, category: &str, source_path: &Path) -> PathBuf {
+    if let Some(vss_relative) = vss_dest_relative(source_path) {
+        return output_base.join(category).join(vss_relative);
+    }
+
     let relative: PathBuf = source_path
         .components()
         .filter_map(|c| match c {
@@ -376,6 +380,32 @@ fn extract_snapshot_volume(path: &Path) -> Option<(String, PathBuf)> {
     let rel_text = path_text[volume_end..].trim_start_matches('\\');
     let relative = PathBuf::from(rel_text);
     Some((volume, relative))
+}
+
+fn vss_dest_relative(path: &Path) -> Option<PathBuf> {
+    let (volume, relative) = extract_snapshot_volume(path)?;
+
+    let marker = "HARDDISKVOLUMESHADOWCOPY";
+    let upper = volume.to_ascii_uppercase();
+    let marker_pos = upper.find(marker)? + marker.len();
+    let snapshot_no: String = volume[marker_pos..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+
+    if snapshot_no.is_empty() {
+        return None;
+    }
+
+    let mut out = PathBuf::from("VSS");
+    out.push(format!("VSS{}", snapshot_no));
+    for component in relative.components() {
+        if let Component::Normal(name) = component {
+            out.push(name);
+        }
+    }
+
+    Some(out)
 }
 
 // ── IO / hashing helpers ──────────────────────────────────────────────────────
@@ -512,6 +542,32 @@ mod tests {
         let (vol, rel) = extract_volume(Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2\$MFT")).unwrap();
         assert_eq!(vol, r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2");
         assert_eq!(rel, PathBuf::from(r"$MFT"));
+    }
+
+    #[test]
+    fn build_dest_uses_vss_prefix_for_snapshot_path() {
+        let base = Path::new("output/HOST");
+        let src = Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM",
+        );
+        let dest = build_dest_path(base, "Registry", src);
+        assert_eq!(
+            dest,
+            PathBuf::from("output/HOST/Registry/VSS/VSS3/Windows/System32/config/SAM")
+        );
+    }
+
+    #[test]
+    fn build_dest_stream_keeps_vss_prefix_and_suffix() {
+        let base = Path::new("output/HOST");
+        let src = Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\$Extend\$UsnJrnl",
+        );
+        let dest = build_dest(base, "NTFS", src, Some("$J"));
+        assert_eq!(
+            dest,
+            PathBuf::from("output/HOST/NTFS/VSS/VSS12/$Extend/$UsnJrnl_J")
+        );
     }
 
     #[test]
