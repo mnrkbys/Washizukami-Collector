@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
@@ -14,9 +14,6 @@ pub struct ShadowCopy {
 }
 
 impl ShadowCopy {
-    pub fn display_name(&self) -> &str {
-        &self.device_object
-    }
 }
 
 pub fn is_snapshot_path(path: &Path) -> bool {
@@ -157,7 +154,7 @@ pub fn snapshots_for_volume(volume: &str) -> Result<Vec<ShadowCopy>> {
 #[cfg(windows)]
 fn volume_guid_path(volume: &str) -> Result<String> {
     use windows::Win32::Storage::FileSystem::GetVolumeNameForVolumeMountPointW;
-    use windows::core::{PCWSTR, PWSTR};
+    use windows::core::PCWSTR;
 
     let mount_point = ensure_mount_point(volume);
     let mount_point_wide: Vec<u16> = mount_point.encode_utf16().chain(std::iter::once(0)).collect();
@@ -166,8 +163,7 @@ fn volume_guid_path(volume: &str) -> Result<String> {
     unsafe {
         GetVolumeNameForVolumeMountPointW(
             PCWSTR(mount_point_wide.as_ptr()),
-            PWSTR(buffer.as_mut_ptr()),
-            buffer.len() as u32,
+            &mut buffer,
         )
         .with_context(|| format!("failed to resolve volume GUID path for {mount_point}"))?;
     }

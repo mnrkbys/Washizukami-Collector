@@ -31,7 +31,7 @@ strip         = "symbols"   # strip debug symbols from the final EXE
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.18"
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Storage_FileSystem",
