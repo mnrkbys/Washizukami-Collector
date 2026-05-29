@@ -26,6 +26,7 @@ Even when the OS has files locked, it can acquire artifacts such as registry hiv
 This tool was inspired by [CDIR-C](https://github.com/CyberDefenseInstitute/CDIR) (Cyber Defense Institute). It aims to deliver the live-system artifact collection approach pioneered by CDIR-C as a portable single binary through a Rust implementation.
 
 **Example analysis tools it pairs with:**
+
 - [Hayabusa](https://github.com/Yamato-Security/hayabusa) — Threat hunting for Windows event logs
 - [Velociraptor](https://github.com/Velocidex/velociraptor) / [KAPE](https://www.kroll.com/en/services/cyber-risk/incident-response-litigation-support/kroll-artifact-parser-extractor-kape) and other forensic frameworks
 - Ingestion into SIEMs such as ELK Stack / Splunk
@@ -34,30 +35,30 @@ This tool was inspired by [CDIR-C](https://github.com/CyberDefenseInstitute/CDIR
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **NTFS Raw Read** | Directly parses the MFT to bypass OS file locks during collection |
-| **SHA-256 Integrity Verification** | Hashes all collected files to enable tamper detection |
-| **Audit Log** | Structured log (`collection.log`) containing timestamps, collection method, and SHA-256 hashes |
-| **Single Binary** | Artifact definitions are embedded at compile time — no external files needed at runtime |
-| **Flexible Filtering** | Filter by category via `--category` (include or exclude with `!` prefix), or fine-tune via `config.yaml` |
-| **ZIP Output** | Compresses all collected artifacts into a single ZIP after collection for easy exfiltration |
-| **Memory Acquisition Integration** | `--mem` option integrates with [WinPmem](https://github.com/Velocidex/WinPmem) to capture memory dumps |
-| **Dry-Run Mode** | Verify collection target paths without touching the filesystem |
-| **YARA Scanning** | `scan` subcommand scans persistence mechanisms with YARA-X, collecting detected files into `infected.zip` |
-| **Confirmation Prompt** | Prompts `[y/N]` before starting collection or scanning to prevent accidental execution |
+| Feature                            | Description                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **NTFS Raw Read**                  | Directly parses the MFT to bypass OS file locks during collection                                         |
+| **SHA-256 Integrity Verification** | Hashes all collected files to enable tamper detection                                                     |
+| **Audit Log**                      | Structured log (`collection.log`) containing timestamps, collection method, and SHA-256 hashes            |
+| **Single Binary**                  | Artifact definitions are embedded at compile time — no external files needed at runtime                   |
+| **Flexible Filtering**             | Filter by category via `--category` (include or exclude with `!` prefix), or fine-tune via `config.yaml`  |
+| **ZIP Output**                     | Compresses all collected artifacts into a single ZIP after collection for easy exfiltration               |
+| **Memory Acquisition Integration** | `--mem` option integrates with [WinPmem](https://github.com/Velocidex/WinPmem) to capture memory dumps    |
+| **Dry-Run Mode**                   | Verify collection target paths without touching the filesystem                                            |
+| **YARA Scanning**                  | `scan` subcommand scans persistence mechanisms with YARA-X, collecting detected files into `infected.zip` |
+| **Confirmation Prompt**            | Prompts `[y/N]` before starting collection or scanning to prevent accidental execution                    |
 
 ---
 
 ## Requirements
 
-| Item | Requirement |
-|------|-------------|
-| **OS** | Windows 10 / Windows 11 (x64) |
-| **Privileges** | Must be run with **Administrator** privileges |
-| **Runtime** | Not required (statically built — no VC++ Redistributable or MinGW DLLs needed) |
-| **Disk Space** | At least equal to the total size of artifacts to be collected |
-| **Memory Acquisition Option** | When using `--mem`, place `winpmem*.exe` in the `tools\` folder |
+| Item                          | Requirement                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| **OS**                        | Windows 10 / Windows 11 (x64)                                                  |
+| **Privileges**                | Must be run with **Administrator** privileges                                  |
+| **Runtime**                   | Not required (statically built — no VC++ Redistributable or MinGW DLLs needed) |
+| **Disk Space**                | At least equal to the total size of artifacts to be collected                  |
+| **Memory Acquisition Option** | When using `--mem`, place `winpmem*.exe` in the `tools\` folder                |
 
 > **Note:** Because NTFS Raw Read is used, the target volume must be NTFS-formatted. Files on FAT32/exFAT volumes are collected using the standard File collector.
 
@@ -72,8 +73,8 @@ The simplest way to use Washizukami is to **double-click `washi.exe`** in Explor
 No configuration needed. Just right-click → **Run as administrator**, and collection starts immediately with default settings:
 
 - Collects **all built-in artifacts**
-- Output folder: **`HOSTNAME_C_YYYYMMDDHHMMSS\`** (created next to `washi.exe`)
-- Audit log: **`HOSTNAME_C_YYYYMMDDHHMMSS\collection.log`** (with SHA-256 hashes)
+- Output folder: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\`** (created next to `washi.exe`, when NTFS uses `%AllNtfsDrives%`)
+- Audit log: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\collection.log`** (with SHA-256 hashes)
 
 The console window stays open after collection completes so you can review the results. Press **Enter** to close it.
 
@@ -88,7 +89,9 @@ washi.exe [OPTIONS]
 
 Options:
   -o, --output <DIR>               Output directory
-                                   [Default: <executable folder>\<COMPUTERNAME>_<C>_<YYYYMMDDHHMMSS>]
+                                   [Default: <executable folder>\<COMPUTERNAME>_<SOURCE>_<YYYYMMDDHHMMSS>]
+                                   Default naming uses SOURCE=ALL in all-drive mode, or SOURCE=C in
+                                   legacy single-drive mode.
   -c, --category <CATEGORY>        Filter by category (repeatable, case-insensitive).
                                    Without prefix: collect only these categories.
                                    With '!' prefix: exclude these categories.
@@ -100,6 +103,8 @@ Options:
                                    Useful when running washi.exe from a USB drive (e.g., D:) and
                                    targeting the system drive (C:) — default behavior collects from C:.
                                    Use --volume D to collect artifacts from D: instead.
+                                   When NTFS artifacts use %AllNtfsDrives%, --volume takes precedence
+                                   and forces collection from only the specified drive.
   -v, --verbose                    Show every collected file instead of one summary line per category
   -h, --help
   -V, --version
@@ -127,11 +132,11 @@ The scan mode targets executable paths registered in Windows **persistence mecha
 
 Washi automatically enumerates the following sources and extracts the executable paths:
 
-| Source | What it covers |
-|--------|----------------|
-| `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` | Programs launched at login for **all users** (system-wide) |
-| `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` | Programs launched at login for the **current user** only |
-| `C:\Windows\System32\Tasks` (Task Scheduler XML) | Scheduled tasks — programs triggered by time, events, or system state |
+| Source                                               | What it covers                                                        |
+| ---------------------------------------------------- | --------------------------------------------------------------------- |
+| `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` | Programs launched at login for **all users** (system-wide)            |
+| `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` | Programs launched at login for the **current user** only              |
+| `C:\Windows\System32\Tasks` (Task Scheduler XML)     | Scheduled tasks — programs triggered by time, events, or system state |
 
 For Run key entries, argument strings are stripped (e.g., `"C:\App\tool.exe" --silent` → `C:\App\tool.exe`) and environment variables are expanded (`%SystemRoot%` → `C:\Windows`). Entries without an absolute path (bare filenames like `sc.exe`) are skipped with a warning since they cannot be reliably located on disk.
 
@@ -206,25 +211,27 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 
 Below is the list of artifacts covered by the built-in definitions. You can also add custom definitions via `config.yaml` (see "Customizing Artifact Definitions" for details).
 
-| Category | Artifact | Collection Method |
-|----------|----------|-------------------|
-| **EventLogs** | Security / System / Application Event Log | NTFS |
-| **Registry** | SAM / SECURITY / SOFTWARE / SYSTEM hives | NTFS |
-| **Registry** | Amcache.hve | NTFS |
-| **Registry** | NTUSER.DAT / UsrClass.dat (all users) | NTFS |
-| **NTFS** | `$MFT` (Master File Table) | NTFS |
-| **NTFS** | `$SECURE:$SDS` (Security Descriptor Stream) | NTFS + ADS |
-| **NTFS** | `$UsnJrnl:$J` (USN Journal) — only allocated extents are collected; sparse leading region is skipped | NTFS + ADS |
-| **Filesystem** | Prefetch files (`Prefetch\*.pf`) | File |
-| **Filesystem** | Recent files (`Recent\*.lnk`) | File |
-| **WMI** | WMI Repository (OBJECTS.DATA / INDEX.BTR / MAPPING*.MAP) | NTFS |
-| **SRUM** | SRUM Database (SRUDB.dat) | NTFS |
-| **Web** | Chrome History | File |
-| **Web** | Firefox History & Cookies (places.sqlite / cookies.sqlite) | File |
-| **Web** | IE / Edge WebCache (WebCacheV01.dat) | File |
-| **Web** | Edge History | File |
+| Category       | Artifact                                                                                             | Collection Method |
+| -------------- | ---------------------------------------------------------------------------------------------------- | ----------------- |
+| **EventLogs**  | Security / System / Application Event Log                                                            | NTFS              |
+| **Registry**   | SAM / SECURITY / SOFTWARE / SYSTEM hives                                                             | NTFS              |
+| **Registry**   | Amcache.hve                                                                                          | NTFS              |
+| **Registry**   | NTUSER.DAT / UsrClass.dat (all users)                                                                | NTFS              |
+| **NTFS**       | `$MFT` (Master File Table)                                                                           | NTFS              |
+| **NTFS**       | `$SECURE:$SDS` (Security Descriptor Stream)                                                          | NTFS + ADS        |
+| **NTFS**       | `$UsnJrnl:$J` (USN Journal) — only allocated extents are collected; sparse leading region is skipped | NTFS + ADS        |
+| **Filesystem** | Prefetch files (`Prefetch\*.pf`)                                                                     | File              |
+| **Filesystem** | Recent files (`Recent\*.lnk`)                                                                        | File              |
+| **WMI**        | WMI Repository (OBJECTS.DATA / INDEX.BTR / MAPPING\*.MAP)                                            | NTFS              |
+| **SRUM**       | SRUM Database (SRUDB.dat)                                                                            | NTFS              |
+| **Web**        | Chrome History                                                                                       | File              |
+| **Web**        | Firefox History & Cookies (places.sqlite / cookies.sqlite)                                           | File              |
+| **Web**        | IE / Edge WebCache (WebCacheV01.dat)                                                                 | File              |
+| **Web**        | Edge History                                                                                         | File              |
 
 > **NTFS + ADS:** Alternate Data Streams are acquired via direct MFT reads. This enables access to streams that cannot be read through normal APIs.
+
+> **All NTFS drives:** Built-in NTFS metadata artifacts use `%AllNtfsDrives%` and are expanded to every OS-recognized NTFS drive. Non-NTFS drives are skipped automatically.
 
 ---
 
@@ -232,37 +239,48 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 
 ```
 <executable folder>\
-├── HOSTNAME_C_YYYYMMDDHHMMSS\  ← Output folder (created next to washi.exe)
+├── HOSTNAME_ALL_YYYYMMDDHHMMSS\  ← Output folder (created next to washi.exe)
 │   ├── collection.log          ← Audit log (timestamps, SHA-256, collection method)
 │   ├── memory.dmp              ← Memory dump (only when --mem is specified)
 │   ├── EventLogs\
-│   │   ├── Security.evtx
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\winevt\Logs\Security.evtx
+│   │   │   └── ...
 │   ├── Registry\
-│   │   ├── SAM
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\config\SAM
+│   │   │   └── ...
 │   ├── NTFS\
-│   │   ├── $MFT
-│   │   ├── $Secure_SDS         ← $SECURE:$SDS stream
-│   │   └── $UsnJrnl_J          ← $UsnJrnl:$J stream
+│   │   ├── C\
+│   │   │   ├── $MFT
+│   │   │   ├── $Secure_SDS     ← $SECURE:$SDS stream
+│   │   │   └── $UsnJrnl_J      ← $UsnJrnl:$J stream
+│   │   └── D\
+│   │       └── ...             ← additional NTFS drives when present
 │   ├── Filesystem\
-│   │   └── ...
+│   │   ├── C\
+│   │   │   └── ...
+│   │   └── D\
+│   │       └── ...
 │   ├── WMI\
-│   │   └── ...
+│   │   └── C\
+│   │       └── ...
 │   ├── SRUM\
-│   │   └── SRUDB.dat
+│   │   └── C\
+│   │       └── Windows\System32\sru\SRUDB.dat
 │   └── Web\
-│       └── ...
-└── HOSTNAME_C_YYYYMMDDHHMMSS.zip ← ZIP archive (only when --zip is specified)
+│        └── C\
+│            └── ...
+└── HOSTNAME_ALL_YYYYMMDDHHMMSS.zip ← ZIP archive (only when --zip is specified)
 ```
 
 ### Audit Log Format
 
 ```
-[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_C_20260418120000\Registry\SAM (262144 bytes, SHA256: abcd1234...)
+[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_ALL_20260418120000\Registry\C\Windows\System32\config\SAM (262144 bytes, SHA256: abcd1234...)
 [2026-03-21T10:30:01+0900] [SKIP ] [-           ] C:\path\missing — file not found
 [2026-03-21T10:30:02+0900] [FAIL ] [-           ] C:\path\locked — <error>
-[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_C_20260418120000\memory.dmp
+[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_ALL_20260418120000\memory.dmp
 [2026-03-21T10:30:10+0900] [INFO ] [-           ] Complete — OK: 141  Skipped: 1  Failed: 0
 
 # When running washi.exe scan
@@ -288,32 +306,32 @@ Whitelist of artifact names to collect. If empty or omitted, all artifacts are c
 <details>
 <summary>Built-in artifact names</summary>
 
-| Category | Name |
-|----------|------|
-| EventLogs | `Security Event Log` |
-| EventLogs | `System Event Log` |
-| EventLogs | `Application Event Log` |
-| Registry | `SAM Registry Hive` |
-| Registry | `SECURITY Registry Hive` |
-| Registry | `SOFTWARE Registry Hive` |
-| Registry | `SYSTEM Registry Hive` |
-| Registry | `Amcache.hve` |
-| Registry | `User NTUSER.DAT` |
-| Registry | `User UsrClass.dat` |
-| NTFS | `$MFT` |
-| NTFS | `$SECURE:$SDS` |
-| NTFS | `$UsnJrnl:$J` |
-| Filesystem | `Prefetch Files` |
-| Filesystem | `Recent LNK Files` |
-| WMI | `WMI Repository OBJECTS.DATA` |
-| WMI | `WMI Repository INDEX.BTR` |
-| WMI | `WMI Repository MAPPING Files` |
-| SRUM | `SRUM Database` |
-| Web | `Chrome History` |
-| Web | `Firefox places.sqlite` |
-| Web | `Firefox cookies.sqlite` |
-| Web | `IE/Edge WebCacheV01.dat` |
-| Web | `Edge History` |
+| Category   | Name                           |
+| ---------- | ------------------------------ |
+| EventLogs  | `Security Event Log`           |
+| EventLogs  | `System Event Log`             |
+| EventLogs  | `Application Event Log`        |
+| Registry   | `SAM Registry Hive`            |
+| Registry   | `SECURITY Registry Hive`       |
+| Registry   | `SOFTWARE Registry Hive`       |
+| Registry   | `SYSTEM Registry Hive`         |
+| Registry   | `Amcache.hve`                  |
+| Registry   | `User NTUSER.DAT`              |
+| Registry   | `User UsrClass.dat`            |
+| NTFS       | `$MFT`                         |
+| NTFS       | `$SECURE:$SDS`                 |
+| NTFS       | `$UsnJrnl:$J`                  |
+| Filesystem | `Prefetch Files`               |
+| Filesystem | `Recent LNK Files`             |
+| WMI        | `WMI Repository OBJECTS.DATA`  |
+| WMI        | `WMI Repository INDEX.BTR`     |
+| WMI        | `WMI Repository MAPPING Files` |
+| SRUM       | `SRUM Database`                |
+| Web        | `Chrome History`               |
+| Web        | `Firefox places.sqlite`        |
+| Web        | `Firefox cookies.sqlite`       |
+| Web        | `IE/Edge WebCacheV01.dat`      |
+| Web        | `Edge History`                 |
 
 </details>
 
@@ -329,12 +347,12 @@ Use the `artifacts` key to add artifacts not covered by the built-in definitions
 
 Required fields:
 
-| Field | Description |
-|-------|-------------|
-| `name` | Unique display name. Referenced by `enabled_artifacts` in `config.yaml`. |
-| `category` | Group name. Also used as the output subfolder name. |
+| Field         | Description                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `name`        | Unique display name. Referenced by `enabled_artifacts` in `config.yaml`.                  |
+| `category`    | Group name. Also used as the output subfolder name.                                       |
 | `target_path` | Path to collect. Supports `%VAR%` environment variables and glob wildcards (`*` and `?`). |
-| `method` | `File` — standard OS copy. `NTFS` — direct MFT read, bypasses file locks. |
+| `method`      | `File` — standard OS copy. `NTFS` — direct MFT read, bypasses file locks.                 |
 
 ### Example `config.yaml`
 
@@ -415,6 +433,7 @@ tools\
 ## Building from Source
 
 **Prerequisites:**
+
 - Rust stable toolchain (`x86_64-pc-windows-gnu`)
 - MSYS2 + MinGW-w64 (GNU linker)
 
@@ -448,9 +467,9 @@ Classic Outlook `.pst` collection is already supported through custom artifact d
 
 The following are planned as future built-in definitions:
 
-| Client | Target Files |
-|--------|-------------|
-| **Microsoft Outlook** | `.ost` files, attachment cache |
+| Client                  | Target Files                                                      |
+| ----------------------- | ----------------------------------------------------------------- |
+| **Microsoft Outlook**   | `.ost` files, attachment cache                                    |
 | **Mozilla Thunderbird** | Mailboxes (`*.msf` / `INBOX`), address books, configuration files |
 
 Since email data tends to be large, optimizations such as date-range filtering and differential collection are also being considered.
