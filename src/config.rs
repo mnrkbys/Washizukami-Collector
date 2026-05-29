@@ -26,6 +26,7 @@ use std::path::Path;
 const EMBEDDED_EVENTLOGS: &str = include_str!("../artifacts/windows_eventlogs.yaml");
 const EMBEDDED_REGISTRY: &str = include_str!("../artifacts/windows_registry.yaml");
 const EMBEDDED_NTFS: &str = include_str!("../artifacts/windows_ntfs.yaml");
+const EMBEDDED_PAGING: &str = include_str!("../artifacts/windows_paging.yaml");
 const EMBEDDED_FILESYSTEM: &str = include_str!("../artifacts/windows_filesystem.yaml");
 const EMBEDDED_WMI: &str = include_str!("../artifacts/windows_wmi.yaml");
 const EMBEDDED_SRUM: &str = include_str!("../artifacts/windows_srum.yaml");
@@ -36,6 +37,7 @@ static EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("windows_eventlogs.yaml", EMBEDDED_EVENTLOGS),
     ("windows_registry.yaml", EMBEDDED_REGISTRY),
     ("windows_ntfs.yaml", EMBEDDED_NTFS),
+    ("windows_paging.yaml", EMBEDDED_PAGING),
     ("windows_filesystem.yaml", EMBEDDED_FILESYSTEM),
     ("windows_wmi.yaml", EMBEDDED_WMI),
     ("windows_srum.yaml", EMBEDDED_SRUM),
@@ -58,7 +60,7 @@ pub enum CollectionMethod {
 pub struct ArtifactDefinition {
     /// Human-readable name, e.g. `"Security Event Log"`.
     pub name: String,
-    /// Grouping category, e.g. `"EventLogs"` or `"Registry"`.
+    /// Grouping category, e.g. `"EventLogs"`, `"Registry"`, or `"Paging"`.
     pub category: String,
     /// Target path — may contain `%VAR%` and glob wildcards.
     pub target_path: String,

@@ -1,0 +1,14 @@
+- name: pagefile.sys
+  category: Paging
+  target_path: "%SystemDrive%\\pagefile.sys"
+  method: NTFS
+
+- name: swapfile.sys
+  category: Paging
+  target_path: "%SystemDrive%\\swapfile.sys"
+  method: NTFS
+
+- name: hiberfil.sys
+  category: Paging
+  target_path: "%SystemDrive%\\hiberfil.sys"
+  method: NTFS
