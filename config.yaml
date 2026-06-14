@@ -30,6 +30,10 @@
 #     - $MFT
 #     - $SECURE:$SDS
 #     - $UsnJrnl:$J
+#   [Paging]
+#     - pagefile.sys
+#     - swapfile.sys
+#     - hiberfil.sys
 #   [Filesystem]
 #     - Prefetch Files
 #     - Recent LNK Files
@@ -54,7 +58,7 @@
 #   - "SOFTWARE Registry Hive"
 
 # disabled_categories — exclude entire categories from collection.
-#   Valid values: EventLogs / Registry / NTFS / Filesystem / WMI / SRUM / Web (case-insensitive)
+#   Valid values: EventLogs / Registry / NTFS / Paging / Filesystem / WMI / SRUM / Web (case-insensitive)
 #   Evaluated after enabled_artifacts, so an artifact explicitly whitelisted will still
 #   be excluded if its category is disabled.
 
