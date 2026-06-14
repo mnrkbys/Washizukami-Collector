@@ -71,8 +71,8 @@ OS がファイルをロックしている状況下でも、NTFS の Master File
 設定は不要です。右クリック →「**管理者として実行**」するだけで、デフォルト設定で収集が始まります。
 
 - **すべての内蔵アーティファクト**を収集
-- 出力先: **`HOSTNAME_C_YYYYMMDDHHMMSS\`**（`washi.exe` と同じ階層に生成）
-- 監査ログ: **`HOSTNAME_C_YYYYMMDDHHMMSS\collection.log`**（SHA-256 ハッシュ付き）
+- 出力先: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\`**（`%AllNtfsDrives%` 利用時、`washi.exe` と同じ階層に生成）
+- 監査ログ: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\collection.log`**（SHA-256 ハッシュ付き）
 
 収集完了後もコンソールウィンドウはそのまま開いた状態を維持するため、結果を確認してから **Enter** キーで閉じることができます。
 
@@ -87,7 +87,9 @@ washi.exe [OPTIONS]
 
 Options:
   -o, --output <DIR>               出力先ディレクトリ
-                                   [デフォルト: <実行ファイルのフォルダ>\<COMPUTERNAME>_<C>_<YYYYMMDDHHMMSS>]
+                                   [デフォルト: <実行ファイルのフォルダ>\<COMPUTERNAME>_<SOURCE>_<YYYYMMDDHHMMSS>]
+                                   デフォルト命名では全ドライブ時は SOURCE=ALL、
+                                   従来の単一ドライブ時は SOURCE=C を使用。
   -c, --category <CATEGORY>        カテゴリでフィルタリング（複数指定可、大文字小文字不問）
                                    プレフィックスなし: 指定カテゴリのみ収集
                                    '!' プレフィックス: 指定カテゴリを除外
@@ -99,6 +101,8 @@ Options:
                                    USB メモリ（D: 等）から washi.exe を実行する場合でも
                                    デフォルトで C: からアーティファクトを収集する。
                                    --volume D を指定すると D: のアーティファクトを収集。
+                                   NTFS アーティファクトが %AllNtfsDrives% を使用していても
+                                   --volume 指定時は指定ドライブのみを収集。
   -v, --verbose                    カテゴリ単位の集計ではなく収集ファイルを1件ずつ表示
   -h, --help
   -V, --version
@@ -225,43 +229,56 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 
 > **NTFS + ADS:** Alternate Data Stream を MFT 直接読み取りで取得します。通常の API では読み出せないストリームにもアクセス可能です。
 
+> **全 NTFS ドライブ対応:** 内蔵 NTFS メタデータ定義は `%AllNtfsDrives%` を使用し、OS が認識している NTFS ドライブへ自動展開されます。非NTFSドライブは自動的にスキップされます。
+
 ---
 
 ## 出力構造
 
 ```
 <実行フォルダ>\
-├── HOSTNAME_C_YYYYMMDDHHMMSS\  ← 出力フォルダ（washi.exe と同じ階層に生成）
+├── HOSTNAME_ALL_YYYYMMDDHHMMSS\  ← 出力フォルダ（washi.exe と同じ階層に生成）
 │   ├── collection.log          ← 監査ログ（タイムスタンプ・SHA-256・収集方法）
 │   ├── memory.dmp              ← メモリダンプ（--mem 指定時のみ）
 │   ├── EventLogs\
-│   │   ├── Security.evtx
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\winevt\Logs\Security.evtx
+│   │   │   └── ...
 │   ├── Registry\
-│   │   ├── SAM
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\config\SAM
+│   │   │   └── ...
 │   ├── NTFS\
-│   │   ├── $MFT
-│   │   ├── $Secure_SDS         ← $SECURE:$SDS ストリーム
-│   │   └── $UsnJrnl_J          ← $UsnJrnl:$J ストリーム
+│   │   ├── C\
+│   │   │   ├── $MFT
+│   │   │   ├── $Secure_SDS     ← $SECURE:$SDS ストリーム
+│   │   │   └── $UsnJrnl_J      ← $UsnJrnl:$J ストリーム
+│   │   └── D\
+│   │       └── ...             ← 追加の NTFS ドライブがある場合
 │   ├── Filesystem\
-│   │   └── ...
+│   │   ├── C\
+│   │   │   └── ...
+│   │   └── D\
+│   │       └── ...
 │   ├── WMI\
-│   │   └── ...
+│   │   └── C\
+│   │       └── ...
 │   ├── SRUM\
-│   │   └── SRUDB.dat
+│   │   └── C\
+│   │       └── Windows\System32\sru\SRUDB.dat
 │   └── Web\
-│       └── ...
-└── HOSTNAME_C_YYYYMMDDHHMMSS.zip ← ZIP アーカイブ（--zip 指定時のみ）
+│        └── C\
+│            └── ...
+└── HOSTNAME_ALL_YYYYMMDDHHMMSS.zip ← ZIP アーカイブ（--zip 指定時のみ）
 ```
 
 ### 監査ログ形式
 
 ```
-[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_C_20260418120000\Registry\SAM (262144 bytes, SHA256: abcd1234...)
+[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_ALL_20260418120000\Registry\C\Windows\System32\config\SAM (262144 bytes, SHA256: abcd1234...)
 [2026-03-21T10:30:01+0900] [SKIP ] [-           ] C:\path\missing — file not found
 [2026-03-21T10:30:02+0900] [FAIL ] [-           ] C:\path\locked — <error>
-[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_C_20260418120000\memory.dmp
+[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_ALL_20260418120000\memory.dmp
 [2026-03-21T10:30:10+0900] [INFO ] [-           ] Complete — OK: 141  Skipped: 1  Failed: 0
 
 # washi.exe scan 実行時

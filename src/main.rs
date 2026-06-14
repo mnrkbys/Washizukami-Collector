@@ -13,6 +13,7 @@ use chrono::Local;
 use clap::{Parser, Subcommand};
 use collector::{collect_artifact, CollectionStatus, RawCollector};
 use config::CollectionFilter;
+use ntfs_reader::NtfsReader;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -91,6 +92,14 @@ enum Commands {
     },
 }
 
+const ALL_NTFS_DRIVES_TOKEN: &str = "%AllNtfsDrives%";
+
+#[derive(Debug, Default, Clone)]
+struct NtfsDriveDiscovery {
+    ntfs: Vec<char>,
+    skipped: Vec<char>,
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
@@ -155,16 +164,6 @@ fn run(no_args: bool) -> Result<()> {
         .and_then(|p| p.parent().map(|d| d.to_owned()))
         .unwrap_or_else(|| PathBuf::from("."));
 
-    // Build default output folder name: HOSTNAME_C_YYYYMMDDHHMMSS
-    // The drive letter reflects the source being collected (--volume override or C by default).
-    let drive_letter = cli.volume.unwrap_or('C').to_ascii_uppercase();
-    let timestamp = Local::now().format("%Y%m%d%H%M%S");
-    let default_folder = format!("{hostname}_{drive_letter}_{timestamp}");
-
-    let output_base = cli
-        .output
-        .unwrap_or_else(|| exe_dir.join(&default_folder));
-
     // ── Build CLI filter ─────────────────────────────────────────────────────
     let (include_cats, exclude_cats): (Vec<String>, Vec<String>) =
         cli.categories.into_iter().partition(|c| !c.starts_with('!'));
@@ -194,6 +193,28 @@ fn run(no_args: bool) -> Result<()> {
     // ── Load artifact definitions ────────────────────────────────────────────
     let definitions = config::load_artifacts(&exe_dir, cli_filter_opt)?;
 
+    let uses_all_ntfs_token = definitions
+        .iter()
+        .any(|def| def.target_path.contains(ALL_NTFS_DRIVES_TOKEN));
+    let drive_discovery = if uses_all_ntfs_token && cli.volume.is_none() {
+        Some(discover_ntfs_drives())
+    } else {
+        None
+    };
+
+    // Build default output folder name:
+    // - HOSTNAME_<DRIVE>_YYYYMMDDHHMMSS when --volume is used (single-drive mode)
+    // - HOSTNAME_ALL_YYYYMMDDHHMMSS when %AllNtfsDrives% is active without --volume
+    // - HOSTNAME_C_YYYYMMDDHHMMSS for legacy/default single-drive behavior.
+    let source_label = default_source_label(cli.volume, uses_all_ntfs_token);
+    let timestamp = Local::now().format("%Y%m%d%H%M%S");
+    let default_folder = format!("{hostname}_{source_label}_{timestamp}");
+
+    let output_base = cli
+        .output
+        .clone()
+        .unwrap_or_else(|| exe_dir.join(&default_folder));
+
     // ── Header ───────────────────────────────────────────────────────────────
     ui::print_header(
         &hostname,
@@ -207,7 +228,8 @@ fn run(no_args: bool) -> Result<()> {
 
     // ── Dry-run path: resolve and print, then exit ───────────────────────────
     if cli.dry_run {
-        run_dry(&definitions, cli.volume);
+        report_drive_discovery(drive_discovery.as_ref(), false, None);
+        run_dry(&definitions, cli.volume, drive_discovery.as_ref());
         return Ok(());
     }
 
@@ -220,6 +242,8 @@ fn run(no_args: bool) -> Result<()> {
 
     // ── Open audit log ───────────────────────────────────────────────────────
     let mut audit = logger::AuditLogger::new(&output_base)?;
+
+    report_drive_discovery(drive_discovery.as_ref(), true, Some(&mut audit));
 
     // ── Memory dump (winpmem) — runs before artifact collection ───────────────
     if cli.mem {
@@ -265,85 +289,98 @@ fn run(no_args: bool) -> Result<()> {
             ui::print_collecting(&def.category);
         }
 
-        // Expand environment variables and glob wildcards.
-        // Apply volume override: replace the drive letter in the artifact path
-        // with the user-specified drive letter (e.g. --volume D turns C:\ into D:\).
-        let target_path = apply_volume_override(&def.target_path, cli.volume);
-        let resolved = match path_resolver::resolve_path(&target_path) {
-            Ok(paths) => paths,
-            Err(e) => {
-                if cli.verbose {
-                    ui::print_warn(&format!(
-                        "path resolution failed for '{}': {:#}",
-                        def.name, e
-                    ));
-                }
-                audit.log_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                n_fail += 1;
-                if seen_failed.insert(def.category.clone()) {
-                    failed_cats.push(def.category.clone());
-                }
-                continue;
-            }
-        };
-
-        if resolved.is_empty() {
+        let target_paths = expand_target_paths(&def.target_path, cli.volume, drive_discovery.as_ref());
+        if target_paths.is_empty() {
             if cli.verbose {
                 ui::print_skip(
                     &def.category,
                     &def.name,
-                    &format!("no files matched '{}'", target_path),
+                    "no NTFS drives available for %AllNtfsDrives%",
                 );
             }
-            audit.log_warn(&format!("no paths matched: {}", target_path));
+            audit.log_warn("no NTFS drives available for %AllNtfsDrives%");
             n_skip += 1;
             cat_skip += 1;
             continue;
         }
 
-        for source_path in &resolved {
-            let result = collect_artifact(def, source_path, &output_base, &mut raw_collector);
-
-            match &result.status {
-                CollectionStatus::Success => {
+        for target_path in target_paths {
+            let resolved = match path_resolver::resolve_path(&target_path) {
+                Ok(paths) => paths,
+                Err(e) => {
                     if cli.verbose {
-                        let method_tag = match (result.method_used.clone(), result.fell_back) {
-                            (_, true) => "NTFS-fallback",
-                            (config::CollectionMethod::NTFS, _) => "NTFS",
-                            (config::CollectionMethod::File, _) => "File",
-                        };
-                        ui::print_ok(
-                            &def.category,
-                            &def.name,
-                            method_tag,
-                            result.bytes_copied,
-                            &result.sha256[..16],
-                            &result.dest_path,
-                        );
+                        ui::print_warn(&format!(
+                            "path resolution failed for '{}': {:#}",
+                            def.name, e
+                        ));
                     }
-                    audit.log_ok(&result);
-                    n_ok += 1;
-                    cat_ok += 1;
-                    cat_bytes += result.bytes_copied;
-                }
-
-                CollectionStatus::Skipped(reason) => {
-                    if cli.verbose {
-                        ui::print_skip(&def.category, &def.name, reason);
-                    }
-                    audit.log_skip(&result);
-                    n_skip += 1;
-                    cat_skip += 1;
-                }
-
-                CollectionStatus::Failed(reason) => {
-                    if cli.verbose {
-                        ui::print_fail(&def.category, &def.name, reason);
-                    }
-                    audit.log_fail(&result);
+                    audit.log_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
                     n_fail += 1;
                     if seen_failed.insert(def.category.clone()) {
                         failed_cats.push(def.category.clone());
+                    }
+                    continue;
+                }
+            };
+
+            if resolved.is_empty() {
+                if cli.verbose {
+                    ui::print_skip(
+                        &def.category,
+                        &def.name,
+                        &format!("no files matched '{}'", target_path),
+                    );
+                }
+                audit.log_warn(&format!("no paths matched: {}", target_path));
+                n_skip += 1;
+                cat_skip += 1;
+                continue;
+            }
+
+            for source_path in &resolved {
+                let result = collect_artifact(def, source_path, &output_base, &mut raw_collector);
+
+                match &result.status {
+                    CollectionStatus::Success => {
+                        if cli.verbose {
+                            let method_tag = match (result.method_used.clone(), result.fell_back) {
+                                (_, true) => "NTFS-fallback",
+                                (config::CollectionMethod::NTFS, _) => "NTFS",
+                                (config::CollectionMethod::File, _) => "File",
+                            };
+                            ui::print_ok(
+                                &def.category,
+                                &def.name,
+                                method_tag,
+                                result.bytes_copied,
+                                &result.sha256[..16],
+                                &result.dest_path,
+                            );
+                        }
+                        audit.log_ok(&result);
+                        n_ok += 1;
+                        cat_ok += 1;
+                        cat_bytes += result.bytes_copied;
+                    }
+
+                    CollectionStatus::Skipped(reason) => {
+                        if cli.verbose {
+                            ui::print_skip(&def.category, &def.name, reason);
+                        }
+                        audit.log_skip(&result);
+                        n_skip += 1;
+                        cat_skip += 1;
+                    }
+
+                    CollectionStatus::Failed(reason) => {
+                        if cli.verbose {
+                            ui::print_fail(&def.category, &def.name, reason);
+                        }
+                        audit.log_fail(&result);
+                        n_fail += 1;
+                        if seen_failed.insert(def.category.clone()) {
+                            failed_cats.push(def.category.clone());
+                        }
                     }
                 }
             }
@@ -386,38 +423,49 @@ fn run(no_args: bool) -> Result<()> {
 
 // ── Dry-run ───────────────────────────────────────────────────────────────────
 
-fn run_dry(definitions: &[config::ArtifactDefinition], volume: Option<char>) {
+fn run_dry(
+    definitions: &[config::ArtifactDefinition],
+    volume: Option<char>,
+    drive_discovery: Option<&NtfsDriveDiscovery>,
+) {
     let mut total_paths: usize = 0;
     let mut total_bytes: u64 = 0;
     let mut unknown_size_count: usize = 0;
 
     for def in definitions {
-        let target_path = apply_volume_override(&def.target_path, volume);
-        let resolved = match path_resolver::resolve_path(&target_path) {
-            Ok(p) => p,
-            Err(e) => {
-                ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                vec![]
-            }
-        };
+        let target_paths = expand_target_paths(&def.target_path, volume, drive_discovery);
+        if target_paths.is_empty() {
+            ui::print_dry_no_match(&def.category, &def.name, &def.target_path);
+            continue;
+        }
 
-        if resolved.is_empty() {
-            ui::print_dry_no_match(&def.category, &def.name, &target_path);
-        } else {
-            for path in &resolved {
-                let size_str = match std::fs::metadata(path) {
-                    Ok(m) => {
-                        let bytes = m.len();
-                        total_bytes += bytes;
-                        ui::format_size(bytes)
-                    }
-                    Err(_) => {
-                        unknown_size_count += 1;
-                        "?".to_owned()
-                    }
-                };
-                ui::print_dry_collect(&def.category, &def.name, &size_str, path);
-                total_paths += 1;
+        for target_path in target_paths {
+            let resolved = match path_resolver::resolve_path(&target_path) {
+                Ok(p) => p,
+                Err(e) => {
+                    ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
+                    vec![]
+                }
+            };
+
+            if resolved.is_empty() {
+                ui::print_dry_no_match(&def.category, &def.name, &target_path);
+            } else {
+                for path in &resolved {
+                    let size_str = match std::fs::metadata(path) {
+                        Ok(m) => {
+                            let bytes = m.len();
+                            total_bytes += bytes;
+                            ui::format_size(bytes)
+                        }
+                        Err(_) => {
+                            unknown_size_count += 1;
+                            "?".to_owned()
+                        }
+                    };
+                    ui::print_dry_collect(&def.category, &def.name, &size_str, path);
+                    total_paths += 1;
+                }
             }
         }
     }
@@ -442,6 +490,119 @@ fn apply_volume_override(path: &str, drive: Option<char>) -> String {
         format!("{}:{}", d, &path[2..])
     } else {
         path.to_owned()
+    }
+}
+
+fn default_source_label(volume: Option<char>, uses_all_ntfs_token: bool) -> String {
+    if let Some(letter) = volume {
+        return letter.to_ascii_uppercase().to_string();
+    }
+    if uses_all_ntfs_token {
+        return "ALL".to_owned();
+    }
+    "C".to_owned()
+}
+
+fn expand_target_paths(
+    target_path: &str,
+    volume: Option<char>,
+    drive_discovery: Option<&NtfsDriveDiscovery>,
+) -> Vec<String> {
+    if volume.is_some() {
+        return vec![apply_volume_override(target_path, volume)];
+    }
+
+    if !target_path.contains(ALL_NTFS_DRIVES_TOKEN) {
+        return vec![target_path.to_owned()];
+    }
+
+    let Some(discovery) = drive_discovery else {
+        return Vec::new();
+    };
+
+    discovery
+        .ntfs
+        .iter()
+        .map(|drive| target_path.replace(ALL_NTFS_DRIVES_TOKEN, &format!("{}:", drive)))
+        .collect()
+}
+
+fn discover_ntfs_drives() -> NtfsDriveDiscovery {
+    let mut discovery = NtfsDriveDiscovery::default();
+
+    for drive in 'A'..='Z' {
+        let root = format!("{}:\\", drive);
+        if !Path::new(&root).exists() {
+            continue;
+        }
+
+        let volume = format!("\\\\.\\{}:", drive);
+        match NtfsReader::open(&volume) {
+            Ok(_) => discovery.ntfs.push(drive),
+            Err(_) => discovery.skipped.push(drive),
+        }
+    }
+
+    discovery
+}
+
+fn report_drive_discovery(
+    discovery: Option<&NtfsDriveDiscovery>,
+    with_ui: bool,
+    mut audit: Option<&mut logger::AuditLogger>,
+) {
+    let Some(discovery) = discovery else {
+        return;
+    };
+
+    if with_ui {
+        if discovery.ntfs.is_empty() {
+            ui::print_warn("no NTFS drives detected for %AllNtfsDrives%");
+        } else {
+            let list = discovery
+                .ntfs
+                .iter()
+                .map(|d| format!("{}:", d))
+                .collect::<Vec<_>>()
+                .join(", ");
+            ui::print_info(&format!("NTFS drives for %AllNtfsDrives%: {list}"));
+        }
+
+        if !discovery.skipped.is_empty() {
+            let skipped = discovery
+                .skipped
+                .iter()
+                .map(|d| format!("{}:", d))
+                .collect::<Vec<_>>()
+                .join(", ");
+            ui::print_warn(&format!(
+                "skipping non-NTFS or inaccessible drives: {skipped}"
+            ));
+        }
+    }
+
+    if let Some(ref mut logger) = audit {
+        if discovery.ntfs.is_empty() {
+            logger.log_warn("no NTFS drives detected for %AllNtfsDrives%");
+        } else {
+            let list = discovery
+                .ntfs
+                .iter()
+                .map(|d| format!("{}:", d))
+                .collect::<Vec<_>>()
+                .join(", ");
+            logger.log_info(&format!("NTFS drives for %AllNtfsDrives%: {list}"));
+        }
+
+        if !discovery.skipped.is_empty() {
+            let skipped = discovery
+                .skipped
+                .iter()
+                .map(|d| format!("{}:", d))
+                .collect::<Vec<_>>()
+                .join(", ");
+            logger.log_warn(&format!("skipping non-NTFS or inaccessible drives: {skipped}"));
+        }
     }
 }
 

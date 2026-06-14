@@ -253,18 +253,24 @@ pub fn collect_artifact(
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
-/// Build the destination path: `{output_base}/{category}/{path_without_drive}`.
+/// Build the destination path: `{output_base}/{category}/{drive}/{path_without_drive}`.
 ///
 /// `C:\Windows\System32\config\SAM` with category `Registry`
-/// → `output/HOST/Registry/Windows/System32/config/SAM`
+/// → `output/HOST/Registry/C/Windows/System32/config/SAM`
 pub fn build_dest_path(output_base: &Path, category: &str, source_path: &Path) -> PathBuf {
-    let relative: PathBuf = source_path
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(s) => Some(PathBuf::from(s)),
-            _ => None,
-        })
-        .collect();
+    let mut relative = PathBuf::new();
+    for c in source_path.components() {
+        match c {
+            Component::Prefix(p) => match p.kind() {
+                Prefix::Disk(d) | Prefix::VerbatimDisk(d) => {
+                    relative.push((d as char).to_ascii_uppercase().to_string())
+                }
+                _ => {}
+            },
+            Component::Normal(s) => relative.push(s),
+            _ => {}
+        }
+    }
 
     output_base.join(category).join(relative)
 }
@@ -422,13 +428,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_dest_strips_drive_letter() {
+    fn build_dest_includes_drive_letter() {
         let base = Path::new("output/HOST");
         let src = Path::new(r"C:\Windows\System32\config\SAM");
         let dest = build_dest_path(base, "Registry", src);
         assert_eq!(
             dest,
-            PathBuf::from("output/HOST/Registry/Windows/System32/config/SAM")
+            PathBuf::from("output/HOST/Registry/C/Windows/System32/config/SAM")
         );
     }
 

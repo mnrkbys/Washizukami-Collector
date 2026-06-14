@@ -73,8 +73,8 @@ The simplest way to use Washizukami is to **double-click `washi.exe`** in Explor
 No configuration needed. Just right-click → **Run as administrator**, and collection starts immediately with default settings:
 
 - Collects **all built-in artifacts**
-- Output folder: **`HOSTNAME_C_YYYYMMDDHHMMSS\`** (created next to `washi.exe`)
-- Audit log: **`HOSTNAME_C_YYYYMMDDHHMMSS\collection.log`** (with SHA-256 hashes)
+- Output folder: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\`** (created next to `washi.exe`, when NTFS uses `%AllNtfsDrives%`)
+- Audit log: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\collection.log`** (with SHA-256 hashes)
 
 The console window stays open after collection completes so you can review the results. Press **Enter** to close it.
 
@@ -89,7 +89,9 @@ washi.exe [OPTIONS]
 
 Options:
   -o, --output <DIR>               Output directory
-                                   [Default: <executable folder>\<COMPUTERNAME>_<C>_<YYYYMMDDHHMMSS>]
+                                   [Default: <executable folder>\<COMPUTERNAME>_<SOURCE>_<YYYYMMDDHHMMSS>]
+                                   Default naming uses SOURCE=ALL in all-drive mode, or SOURCE=C in
+                                   legacy single-drive mode.
   -c, --category <CATEGORY>        Filter by category (repeatable, case-insensitive).
                                    Without prefix: collect only these categories.
                                    With '!' prefix: exclude these categories.
@@ -101,6 +103,8 @@ Options:
                                    Useful when running washi.exe from a USB drive (e.g., D:) and
                                    targeting the system drive (C:) — default behavior collects from C:.
                                    Use --volume D to collect artifacts from D: instead.
+                                   When NTFS artifacts use %AllNtfsDrives%, --volume takes precedence
+                                   and forces collection from only the specified drive.
   -v, --verbose                    Show every collected file instead of one summary line per category
   -h, --help
   -V, --version
@@ -227,43 +231,56 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 
 > **NTFS + ADS:** Alternate Data Streams are acquired via direct MFT reads. This enables access to streams that cannot be read through normal APIs.
 
+> **All NTFS drives:** Built-in NTFS metadata artifacts use `%AllNtfsDrives%` and are expanded to every OS-recognized NTFS drive. Non-NTFS drives are skipped automatically.
+
 ---
 
 ## Output Structure
 
 ```
 <executable folder>\
-├── HOSTNAME_C_YYYYMMDDHHMMSS\  ← Output folder (created next to washi.exe)
+├── HOSTNAME_ALL_YYYYMMDDHHMMSS\  ← Output folder (created next to washi.exe)
 │   ├── collection.log          ← Audit log (timestamps, SHA-256, collection method)
 │   ├── memory.dmp              ← Memory dump (only when --mem is specified)
 │   ├── EventLogs\
-│   │   ├── Security.evtx
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\winevt\Logs\Security.evtx
+│   │   │   └── ...
 │   ├── Registry\
-│   │   ├── SAM
-│   │   └── ...
+│   │   ├── C\
+│   │   │   ├── Windows\System32\config\SAM
+│   │   │   └── ...
 │   ├── NTFS\
-│   │   ├── $MFT
-│   │   ├── $Secure_SDS         ← $SECURE:$SDS stream
-│   │   └── $UsnJrnl_J          ← $UsnJrnl:$J stream
+│   │   ├── C\
+│   │   │   ├── $MFT
+│   │   │   ├── $Secure_SDS     ← $SECURE:$SDS stream
+│   │   │   └── $UsnJrnl_J      ← $UsnJrnl:$J stream
+│   │   └── D\
+│   │       └── ...             ← additional NTFS drives when present
 │   ├── Filesystem\
-│   │   └── ...
+│   │   ├── C\
+│   │   │   └── ...
+│   │   └── D\
+│   │       └── ...
 │   ├── WMI\
-│   │   └── ...
+│   │   └── C\
+│   │       └── ...
 │   ├── SRUM\
-│   │   └── SRUDB.dat
+│   │   └── C\
+│   │       └── Windows\System32\sru\SRUDB.dat
 │   └── Web\
-│       └── ...
-└── HOSTNAME_C_YYYYMMDDHHMMSS.zip ← ZIP archive (only when --zip is specified)
+│        └── C\
+│            └── ...
+└── HOSTNAME_ALL_YYYYMMDDHHMMSS.zip ← ZIP archive (only when --zip is specified)
 ```
 
 ### Audit Log Format
 
 ```
-[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_C_20260418120000\Registry\SAM (262144 bytes, SHA256: abcd1234...)
+[2026-03-21T10:30:00+0900] [OK   ] [NTFS        ] C:\Windows\System32\config\SAM -> HOSTNAME_ALL_20260418120000\Registry\C\Windows\System32\config\SAM (262144 bytes, SHA256: abcd1234...)
 [2026-03-21T10:30:01+0900] [SKIP ] [-           ] C:\path\missing — file not found
 [2026-03-21T10:30:02+0900] [FAIL ] [-           ] C:\path\locked — <error>
-[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_C_20260418120000\memory.dmp
+[2026-03-21T10:30:03+0900] [TOOL ] [winpmem_x64 ] Starting: tools\winpmem_x64.exe -> HOSTNAME_ALL_20260418120000\memory.dmp
 [2026-03-21T10:30:10+0900] [INFO ] [-           ] Complete — OK: 141  Skipped: 1  Failed: 0
 
 # When running washi.exe scan
@@ -455,9 +472,7 @@ The following are planned as future built-in definitions:
 
 | Client                  | Target Files                                                      |
 | ----------------------- | ----------------------------------------------------------------- |
-| **Microsoft Outlook**   | `.ost` files, attachment cache                                   
-|--------|-------------|
-| **Microsoft Outlook** | `.ost` files, attachment cache |
+| **Microsoft Outlook**   | `.ost` files, attachment cache                                    |
 | **Mozilla Thunderbird** | Mailboxes (`*.msf` / `INBOX`), address books, configuration files |
 
 Since email data tends to be large, optimizations such as date-range filtering and differential collection are also being considered.
