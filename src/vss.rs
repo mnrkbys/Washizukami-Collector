@@ -111,10 +111,11 @@ struct ShadowCopyRow {
 
 #[cfg(windows)]
 pub fn snapshots_for_volume(volume: &str) -> Result<Vec<ShadowCopy>> {
-    use wmi::WMIConnection;
+    use wmi::{COMLibrary, WMIConnection};
 
     let normalized_volume = normalize_volume_name(volume_guid_path(volume)?);
-    let connection = WMIConnection::new().context("failed to connect to WMI for VSS enumeration")?;
+    let com_lib = COMLibrary::new().context("failed to initialize COM library")?;
+    let connection = WMIConnection::new(com_lib).context("failed to connect to WMI for VSS enumeration")?;
     let rows: Vec<ShadowCopyRow> = connection
         .raw_query(
             "SELECT ID, DeviceObject, VolumeName, InstallDate, State FROM Win32_ShadowCopy",
