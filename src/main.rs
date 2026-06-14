@@ -43,6 +43,7 @@ struct Cli {
     ///   --category Registry --category EventLogs
     ///   --category '!EventLogs' --category '!WMI'
     /// Available: EventLogs, Registry, NTFS, Filesystem, WMI, SRUM, Web
+    /// Unknown category names are rejected.
     #[arg(short, long = "category", value_name = "CATEGORY")]
     categories: Vec<String>,
 
@@ -100,6 +101,10 @@ fn main() {
         eprintln!("\nError: {e:#}");
         if no_args {
             eprintln!("\n  Right-click washi.exe and select \"Run as administrator\".");
+        }
+
+        if !no_args {
+            std::process::exit(1);
         }
     }
 

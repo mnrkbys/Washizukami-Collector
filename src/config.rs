@@ -17,7 +17,7 @@
 //! definitions before filtering.  If a custom entry shares a `name` with an
 //! embedded entry the custom definition takes precedence.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -252,6 +252,8 @@ pub fn load_artifacts(
         None => file_filter,
     };
 
+    ensure_known_categories(&defs, &effective)?;
+
     Ok(if effective.is_empty() {
         defs
     } else {
@@ -340,6 +342,47 @@ fn load_external_config(exe_dir: &Path) -> Result<Option<ExternalConfig>> {
         .with_context(|| format!("failed to parse '{}' as ExternalConfig", path.display()))?;
 
     Ok(Some(config))
+}
+
+fn ensure_known_categories(defs: &[ArtifactDefinition], filter: &CollectionFilter) -> Result<()> {
+    let mut available_categories: Vec<String> = Vec::new();
+    for d in defs {
+        if !available_categories
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&d.category))
+        {
+            available_categories.push(d.category.clone());
+        }
+    }
+    available_categories.sort_by_key(|s| s.to_ascii_lowercase());
+
+    let mut unknown: Vec<String> = Vec::new();
+    for c in filter
+        .enabled_categories
+        .iter()
+        .chain(filter.disabled_categories.iter())
+    {
+        let trimmed = c.trim();
+        let is_known = !trimmed.is_empty()
+            && available_categories
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(trimmed));
+
+        if !is_known && !unknown.iter().any(|u| u.eq_ignore_ascii_case(trimmed)) {
+            unknown.push(trimmed.to_owned());
+        }
+    }
+
+    if !unknown.is_empty() {
+        unknown.sort_by_key(|s| s.to_ascii_lowercase());
+        bail!(
+            "unknown category/categories: {}. available categories: {}",
+            unknown.join(", "),
+            available_categories.join(", ")
+        );
+    }
+
+    Ok(())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -640,6 +683,47 @@ artifacts:
         let defs = load_artifacts(&tmp, None).unwrap();
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "My App Log");
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn load_artifacts_rejects_unknown_category() {
+        let tmp = std::env::temp_dir().join("rust_cdir_config_test_unknown_category");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let cli = CollectionFilter {
+            enabled_categories: vec!["Pasing".to_owned()],
+            ..Default::default()
+        };
+        let err = load_artifacts(&tmp, Some(&cli)).unwrap_err().to_string();
+        assert!(err.contains("unknown category/categories"));
+        assert!(err.contains("Pasing"));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn load_artifacts_allows_custom_category() {
+        let tmp = std::env::temp_dir().join("rust_cdir_config_test_custom_category_allowed");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let yaml = r#"
+artifacts:
+  - name: "My Custom Log"
+    category: "Custom"
+    target_path: "C:\\MyApp\\app.log"
+    method: File
+"#;
+        std::fs::write(tmp.join("config.yaml"), yaml).unwrap();
+
+        let cli = CollectionFilter {
+            enabled_categories: vec!["Custom".to_owned()],
+            ..Default::default()
+        };
+        let defs = load_artifacts(&tmp, Some(&cli)).unwrap();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "My Custom Log");
 
         std::fs::remove_dir_all(&tmp).unwrap();
     }
