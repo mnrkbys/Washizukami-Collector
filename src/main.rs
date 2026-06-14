@@ -7,6 +7,7 @@ mod path_resolver;
 mod privileges;
 mod scan;
 mod ui;
+mod vss;
 
 use anyhow::{Context, Result};
 use chrono::Local;
@@ -68,6 +69,11 @@ struct Cli {
     /// The dump is written to <output_dir>/memory.dmp.
     #[arg(long)]
     mem: bool,
+
+    /// Collect from all discovered Volume Shadow Copy snapshots and always
+    /// include the live volume paths.
+    #[arg(long)]
+    vss: bool,
 
     /// Show every collected file instead of one summary line per category.
     #[arg(short, long)]
@@ -139,6 +145,7 @@ fn run(no_args: bool) -> Result<()> {
             zip: false,
             volume: None,
             mem: false,
+            vss: false,
             verbose: false,
         }
     } else {
@@ -219,6 +226,7 @@ fn run(no_args: bool) -> Result<()> {
     ui::print_header(
         &hostname,
         cli.volume,
+        cli.vss,
         cli.dry_run,
         cli.verbose,
         definitions.len(),
@@ -229,7 +237,7 @@ fn run(no_args: bool) -> Result<()> {
     // ── Dry-run path: resolve and print, then exit ───────────────────────────
     if cli.dry_run {
         report_drive_discovery(drive_discovery.as_ref(), false, None);
-        run_dry(&definitions, cli.volume, drive_discovery.as_ref());
+        run_dry(&definitions, cli.volume, drive_discovery.as_ref(), cli.vss);
         return Ok(());
     }
 
@@ -305,8 +313,11 @@ fn run(no_args: bool) -> Result<()> {
         }
 
         for target_path in target_paths {
-            let resolved = match path_resolver::resolve_path(&target_path) {
-                Ok(paths) => paths,
+            let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(
+                &target_path,
+                cli.vss,
+            ) {
+                Ok(value) => value,
                 Err(e) => {
                     if cli.verbose {
                         ui::print_warn(&format!(
@@ -323,15 +334,27 @@ fn run(no_args: bool) -> Result<()> {
                 }
             };
 
+            if cli.vss {
+                let msg = format!(
+                    "VSS enabled: '{}' expanded to {} pattern(s) [all snapshots + live]",
+                    expanded_target_path,
+                    pattern_count
+                );
+                audit.log_info(&msg);
+                if cli.verbose {
+                    ui::print_info(&msg);
+                }
+            }
+
             if resolved.is_empty() {
                 if cli.verbose {
                     ui::print_skip(
                         &def.category,
                         &def.name,
-                        &format!("no files matched '{}'", target_path),
+                        &format!("no files matched '{}'", expanded_target_path),
                     );
                 }
-                audit.log_warn(&format!("no paths matched: {}", target_path));
+                audit.log_warn(&format!("no paths matched: {}", expanded_target_path));
                 n_skip += 1;
                 cat_skip += 1;
                 continue;
@@ -427,6 +450,7 @@ fn run_dry(
     definitions: &[config::ArtifactDefinition],
     volume: Option<char>,
     drive_discovery: Option<&NtfsDriveDiscovery>,
+    vss_enabled: bool,
 ) {
     let mut total_paths: usize = 0;
     let mut total_bytes: u64 = 0;
@@ -440,16 +464,24 @@ fn run_dry(
         }
 
         for target_path in target_paths {
-            let resolved = match path_resolver::resolve_path(&target_path) {
-                Ok(p) => p,
+            let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
+                Ok(value) => value,
                 Err(e) => {
                     ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                    vec![]
+                    (vec![], 0, target_path.clone())
                 }
             };
 
+            if vss_enabled {
+                ui::print_info(&format!(
+                    "VSS expanded '{}' to {} pattern(s) [all snapshots + live]",
+                    expanded_target_path,
+                    pattern_count
+                ));
+            }
+
             if resolved.is_empty() {
-                ui::print_dry_no_match(&def.category, &def.name, &target_path);
+                ui::print_dry_no_match(&def.category, &def.name, &expanded_target_path);
             } else {
                 for path in &resolved {
                     let size_str = match std::fs::metadata(path) {
@@ -471,6 +503,27 @@ fn run_dry(
     }
 
     ui::print_dry_summary(definitions.len(), total_paths, total_bytes, unknown_size_count);
+}
+
+fn resolve_source_paths_with_patterns(
+    target_path: &str,
+    vss_enabled: bool,
+) -> Result<(Vec<PathBuf>, usize, String)> {
+    let expanded_target_path = path_resolver::expand_env_vars(target_path);
+    let patterns = vss::expand_shadow_patterns(&expanded_target_path, vss_enabled)?;
+    let pattern_count = patterns.len();
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+
+    for pattern in patterns {
+        for path in path_resolver::resolve_path(&pattern)? {
+            if seen.insert(path.clone()) {
+                resolved.push(path);
+            }
+        }
+    }
+
+    Ok((resolved, pattern_count, expanded_target_path))
 }
 
 // ── Volume override ───────────────────────────────────────────────────────────

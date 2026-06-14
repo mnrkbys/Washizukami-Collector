@@ -34,6 +34,7 @@ fn config_row(label: &str, value: &str) {
 pub fn print_header(
     hostname: &str,
     volume_override: Option<char>,
+    vss_enabled: bool,
     dry_run: bool,
     verbose: bool,
     artifact_count: usize,
@@ -53,6 +54,10 @@ pub fn print_header(
 
     if let Some(v) = volume_override {
         config_row("Volume", &format!("{v}: (override)"));
+    }
+
+    if vss_enabled {
+        config_row("VSS", "enabled (all snapshots + live)");
     }
 
     let mode = if dry_run {

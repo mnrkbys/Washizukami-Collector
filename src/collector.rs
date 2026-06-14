@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf, Prefix};
 
 use crate::config::{ArtifactDefinition, CollectionMethod};
 use crate::ntfs_reader::NtfsReader;
+use crate::vss;
 
 // ── Result types ─────────────────────────────────────────────────────────────
 
@@ -71,14 +72,17 @@ pub trait Collector {
 /// [`RawCollector`] fallback.
 pub struct StandardCollector;
 
-impl Collector for StandardCollector {
-    fn collect(&mut self, source: &Path, dest: &Path) -> Result<CollectionResult> {
+impl StandardCollector {
+    fn collect_open_path(
+        &mut self,
+        source: &Path,
+        open_path: &Path,
+        dest: &Path,
+    ) -> Result<CollectionResult> {
         ensure_parent(dest)?;
 
-        // Open source — propagate the raw IO error so the dispatcher can
-        // inspect io::Error::kind() / raw_os_error().
-        let mut src = File::open(source)
-            .with_context(|| format!("cannot open '{}'", source.display()))?;
+        let mut src = File::open(open_path)
+            .with_context(|| format!("cannot open '{}'", open_path.display()))?;
 
         let out = File::create(dest)
             .with_context(|| format!("cannot create '{}'", dest.display()))?;
@@ -96,6 +100,13 @@ impl Collector for StandardCollector {
             fell_back: false,
             status: CollectionStatus::Success,
         })
+    }
+
+}
+
+impl Collector for StandardCollector {
+    fn collect(&mut self, source: &Path, dest: &Path) -> Result<CollectionResult> {
+        self.collect_open_path(source, source, dest)
     }
 }
 
@@ -220,12 +231,22 @@ pub fn collect_artifact(
     }
 
     match def.method {
-        CollectionMethod::NTFS => raw_collector
-            .collect(source_path, &dest)
-            .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::NTFS, e)),
+        CollectionMethod::NTFS => {
+            raw_collector
+                .collect(source_path, &dest)
+                .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::NTFS, e))
+        }
 
         CollectionMethod::File => {
             let mut std_col = StandardCollector;
+
+            // VSS snapshot paths are collected via standard file API.
+            if vss::is_snapshot_path(source_path) {
+                return std_col
+                    .collect(source_path, &dest)
+                    .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::File, e));
+            }
+
             match std_col.collect(source_path, &dest) {
                 Ok(r) => r,
 
@@ -258,6 +279,10 @@ pub fn collect_artifact(
 /// `C:\Windows\System32\config\SAM` with category `Registry`
 /// → `output/HOST/Registry/C/Windows/System32/config/SAM`
 pub fn build_dest_path(output_base: &Path, category: &str, source_path: &Path) -> PathBuf {
+    if let Some(vss_relative) = vss_dest_relative(source_path) {
+        return output_base.join(category).join(vss_relative);
+    }
+
     let mut relative = PathBuf::new();
     for c in source_path.components() {
         match c {
@@ -306,6 +331,10 @@ fn build_dest(
 ///
 /// `"C:\Windows\System32\config\SAM"` → `("\\.\C:", "Windows\System32\config\SAM")`
 fn extract_volume(path: &Path) -> Result<(String, PathBuf)> {
+    if let Some((volume, relative)) = extract_snapshot_volume(path) {
+        return Ok((volume, relative));
+    }
+
     let mut comps = path.components();
 
     let drive_char = match comps.next() {
@@ -329,6 +358,60 @@ fn extract_volume(path: &Path) -> Result<(String, PathBuf)> {
     let volume = format!("\\\\.\\{}:", drive_char.to_ascii_uppercase());
 
     Ok((volume, relative))
+}
+
+fn extract_snapshot_volume(path: &Path) -> Option<(String, PathBuf)> {
+    let path_text = path.to_string_lossy().replace('/', "\\");
+    let upper = path_text.to_ascii_uppercase();
+    let marker = r"\\?\GLOBALROOT\DEVICE\HARDDISKVOLUMESHADOWCOPY";
+
+    if !upper.starts_with(marker) {
+        return None;
+    }
+
+    let mut volume_end = marker.len();
+    for ch in upper[marker.len()..].chars() {
+        if ch.is_ascii_digit() {
+            volume_end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    if volume_end == marker.len() {
+        return None;
+    }
+
+    let volume = path_text[..volume_end].to_owned();
+    let rel_text = path_text[volume_end..].trim_start_matches('\\');
+    let relative = PathBuf::from(rel_text);
+    Some((volume, relative))
+}
+
+fn vss_dest_relative(path: &Path) -> Option<PathBuf> {
+    let (volume, relative) = extract_snapshot_volume(path)?;
+
+    let marker = "HARDDISKVOLUMESHADOWCOPY";
+    let upper = volume.to_ascii_uppercase();
+    let marker_pos = upper.find(marker)? + marker.len();
+    let snapshot_no: String = volume[marker_pos..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+
+    if snapshot_no.is_empty() {
+        return None;
+    }
+
+    let mut out = PathBuf::from("VSS");
+    out.push(format!("VSS{}", snapshot_no));
+    for component in relative.components() {
+        if let Component::Normal(name) = component {
+            out.push(name);
+        }
+    }
+
+    Some(out)
 }
 
 // ── IO / hashing helpers ──────────────────────────────────────────────────────
@@ -448,6 +531,49 @@ mod tests {
     #[test]
     fn extract_volume_requires_drive_letter() {
         assert!(extract_volume(Path::new(r"relative\path")).is_err());
+    }
+
+    #[test]
+    fn extract_volume_parses_vss_snapshot_path() {
+        let (vol, rel) = extract_volume(
+            Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM"),
+        )
+        .unwrap();
+        assert_eq!(vol, r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3");
+        assert_eq!(rel, PathBuf::from(r"Windows\System32\config\SAM"));
+    }
+
+    #[test]
+    fn extract_volume_parses_vss_snapshot_root_meta_file() {
+        let (vol, rel) = extract_volume(Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2\$MFT")).unwrap();
+        assert_eq!(vol, r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2");
+        assert_eq!(rel, PathBuf::from(r"$MFT"));
+    }
+
+    #[test]
+    fn build_dest_uses_vss_prefix_for_snapshot_path() {
+        let base = Path::new("output/HOST");
+        let src = Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM",
+        );
+        let dest = build_dest_path(base, "Registry", src);
+        assert_eq!(
+            dest,
+            PathBuf::from("output/HOST/Registry/VSS/VSS3/Windows/System32/config/SAM")
+        );
+    }
+
+    #[test]
+    fn build_dest_stream_keeps_vss_prefix_and_suffix() {
+        let base = Path::new("output/HOST");
+        let src = Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\$Extend\$UsnJrnl",
+        );
+        let dest = build_dest(base, "NTFS", src, Some("$J"));
+        assert_eq!(
+            dest,
+            PathBuf::from("output/HOST/NTFS/VSS/VSS12/$Extend/$UsnJrnl_J")
+        );
     }
 
     #[test]

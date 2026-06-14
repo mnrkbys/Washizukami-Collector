@@ -97,6 +97,8 @@ Options:
       --dry-run                    パス解決結果のみ表示（ファイルは収集しない）
       --zip                        収集完了後に ZIP アーカイブを生成
       --mem                        tools\winpmem*.exe でメモリダンプを取得（収集前に実行）
+      --vss                        取得可能なすべての Volume Shadow Copy から収集しつつ、
+                                   ライブボリュームも常に同時収集
       --volume <LETTER>            収集対象のドライブレターを上書き。
                                    USB メモリ（D: 等）から washi.exe を実行する場合でも
                                    デフォルトで C: からアーティファクトを収集する。
@@ -190,6 +192,9 @@ washi.exe --category '!EventLogs' --category '!WMI'
 # 収集ファイルを1件ずつ表示（詳細モード）
 washi.exe --verbose
 
+# 取得可能な全 Volume Shadow Copy + ライブボリュームを同時収集
+washi.exe --vss
+
 # 収集対象の確認（ファイルは書き込まない）
 washi.exe --dry-run
 
@@ -198,6 +203,9 @@ washi.exe --output D:\evidence\case001 --zip
 
 # 別ドライブ（フォレンジックターゲットが D: としてマウントされている場合など）からアーティファクトを収集
 washi.exe --volume D --output E:\evidence\case001
+
+# VSS 展開結果を dry-run で確認
+washi.exe --vss --dry-run
 
 # YARA スキャン（永続化パスをスキャンし、検知ファイルを infected.zip に収集）
 washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
