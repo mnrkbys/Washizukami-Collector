@@ -82,17 +82,17 @@
 # artifacts:
 #   - name: "My Application Log"
 #     category: "Custom"
-#     target_path: "C:\\MyApp\\logs\\app.log"
+#     target_path: "C:\MyApp\logs\app.log"
 #     method: File
 #
 #   - name: "My Application DB"
 #     category: "Custom"
-#     target_path: "C:\\MyApp\\data\\app.db"
+#     target_path: "C:\MyApp\data\app.db"
 #     method: NTFS
 #
 #   - name: "All XML Configs"
 #     category: "Custom"
-#     target_path: "C:\\MyApp\\config\\*.xml"
+#     target_path: "C:\MyApp\config\*.xml"
 #     method: File
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,5 +114,41 @@
 # artifacts:
 #   - name: "Outlook PST Files"
 #     category: "Mail"
-#     target_path: "C:\\Users\\*\\OneDrive\\ドキュメント\\Outlook ファイル\\*.pst"
+#     target_path: "C:\Users\*\OneDrive\ドキュメント\Outlook ファイル\*.pst"
 #     method: NTFS
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: Claude Code local artifacts
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Claude Code stores conversation history, paste/image caches, and file-edit
+# snapshots under %USERPROFILE%\.claude\.
+#
+# method: NTFS is used because Claude Code may be running and holding file locks
+# during collection. Direct MFT access bypasses locks and ensures complete capture.
+#
+# history.jsonl  — full record of all prompt inputs entered by the user
+# paste-cache\*  — large text pastes (stored externally to keep history.jsonl compact)
+# image-cache\*  — large image pastes (same reason as paste-cache)
+# file-history\* — pre-edit snapshots of files modified by Claude Code
+
+artifacts:
+  - name: "Claude Code history.jsonl"
+    category: "AI Tools"
+    target_path: "%USERPROFILE%\.claude\history.jsonl"
+    method: NTFS
+
+  - name: "Claude Code paste-cache"
+    category: "AI Tools"
+    target_path: "%USERPROFILE%\.claude\paste-cache\*"
+    method: NTFS
+
+  - name: "Claude Code image-cache"
+    category: "AI Tools"
+    target_path: "%USERPROFILE%\.claude\image-cache\*"
+    method: NTFS
+
+  - name: "Claude Code file-history"
+    category: "AI Tools"
+    target_path: "%USERPROFILE%\.claude\file-history\*"
+    method: NTFS
