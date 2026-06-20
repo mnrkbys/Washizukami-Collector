@@ -420,6 +420,52 @@ artifacts:
 >
 > **Size warning:** `.pst` files can be several GB. Run `--dry-run` first to check sizes before collecting.
 
+### Recipe: Collecting Claude Code Artifacts
+
+[Claude Code](https://claude.ai/code) stores its local data under `%USERPROFILE%\.claude\`. These files may be locked while Claude Code is running, making NTFS raw read the appropriate collection method.
+
+| Path | Contents |
+| ---- | -------- |
+| `%USERPROFILE%\.claude\history.jsonl` | Full record of all prompt inputs entered by the user |
+| `%USERPROFILE%\.claude\paste-cache\*` | Large text pastes stored externally to keep `history.jsonl` compact |
+| `%USERPROFILE%\.claude\image-cache\*` | Large image pastes (same reason as paste-cache) |
+| `%USERPROFILE%\.claude\file-history\*` | Pre-edit snapshots of files modified by Claude Code |
+
+Add the following entries to `config.yaml` to collect these artifacts:
+
+```yaml
+artifacts:
+  - name: "Claude Code history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\history.jsonl'
+    method: NTFS
+
+  - name: "Claude Code paste-cache"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\paste-cache\*'
+    method: NTFS
+
+  - name: "Claude Code image-cache"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\image-cache\*'
+    method: NTFS
+
+  - name: "Claude Code file-history"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\file-history\*'
+    method: NTFS
+```
+
+A ready-to-use `config.yaml` with these definitions is included in this repository.
+
+To verify what would be collected before running:
+
+```powershell
+washi.exe --category "AI Tools" --dry-run
+```
+
+> **Note on `image-cache`:** If you have never pasted an image into Claude Code, the `image-cache` directory does not exist and will show `⚠ NO MATCH` in dry-run output — this is expected.
+
 ---
 
 ## Memory Acquisition (WinPmem Integration)
