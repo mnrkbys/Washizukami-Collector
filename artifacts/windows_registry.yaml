@@ -1,34 +1,34 @@
 - name: SAM Registry Hive
   category: Registry
-  target_path: "%SystemRoot%\\System32\\config\\SAM"
+  target_path: "%SystemRoot%\\System32\\config\\SAM*"
   method: NTFS
 
 - name: SECURITY Registry Hive
   category: Registry
-  target_path: "%SystemRoot%\\System32\\config\\SECURITY"
+  target_path: "%SystemRoot%\\System32\\config\\SECURITY*"
   method: NTFS
 
 - name: SOFTWARE Registry Hive
   category: Registry
-  target_path: "%SystemRoot%\\System32\\config\\SOFTWARE"
+  target_path: "%SystemRoot%\\System32\\config\\SOFTWARE*"
   method: NTFS
 
 - name: SYSTEM Registry Hive
   category: Registry
-  target_path: "%SystemRoot%\\System32\\config\\SYSTEM"
+  target_path: "%SystemRoot%\\System32\\config\\SYSTEM*"
   method: NTFS
 
 - name: Amcache.hve
   category: Registry
-  target_path: "%SystemRoot%\\AppCompat\\Programs\\Amcache.hve"
+  target_path: "%SystemRoot%\\AppCompat\\Programs\\Amcache.hve*"
   method: NTFS
 
 - name: User NTUSER.DAT
   category: Registry
-  target_path: "C:\\Users\\*\\NTUSER.DAT"
+  target_path: "C:\\Users\\*\\NTUSER.DAT*"
   method: NTFS
 
 - name: User UsrClass.dat
   category: Registry
-  target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat"
+  target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat*"
   method: NTFS
