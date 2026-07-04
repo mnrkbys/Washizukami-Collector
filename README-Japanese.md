@@ -220,9 +220,9 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | カテゴリ       | アーティファクト                                                                    | 収集方式   |
 | -------------- | ----------------------------------------------------------------------------------- | ---------- |
 | **EventLogs**  | Security / System / Application Event Log                                           | NTFS       |
-| **Registry**   | SAM / SECURITY / SOFTWARE / SYSTEM ハイブ                                           | NTFS       |
-| **Registry**   | Amcache.hve                                                                         | NTFS       |
-| **Registry**   | NTUSER.DAT / UsrClass.dat（全ユーザー）                                             | NTFS       |
+| **Registry**   | SAM / SECURITY / SOFTWARE / SYSTEM ハイブ（トランザクションログ .LOG1 / .LOG2 含む） | NTFS       |
+| **Registry**   | Amcache.hve（.LOG1 / .LOG2 含む）                                                   | NTFS       |
+| **Registry**   | NTUSER.DAT / UsrClass.dat（全ユーザー、.LOG1 / .LOG2・TxR ファイル含む）            | NTFS       |
 | **NTFS**       | `$MFT`（Master File Table）                                                         | NTFS       |
 | **NTFS**       | `$SECURE:$SDS`（セキュリティ記述子ストリーム）                                      | NTFS + ADS |
 | **NTFS**       | `$UsnJrnl:$J`（USN ジャーナル）— スパース領域をスキップし、実アロケート部分のみ収集 | NTFS + ADS |
@@ -234,6 +234,10 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | **Web**        | Firefox 履歴・Cookie（places.sqlite / cookies.sqlite）                              | File       |
 | **Web**        | IE / Edge WebCache（WebCacheV01.dat）                                               | File       |
 | **Web**        | Edge 履歴                                                                           | File       |
+| **Web**        | Brave 履歴                                                                          | File       |
+| **Web**        | Vivaldi 履歴                                                                        | File       |
+| **Web**        | Opera 履歴                                                                          | File       |
+| **Web**        | Yandex Browser 履歴                                                                 | File       |
 
 > **NTFS + ADS:** Alternate Data Stream を MFT 直接読み取りで取得します。通常の API では読み出せないストリームにもアクセス可能です。
 
@@ -341,6 +345,10 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | Web        | `Firefox cookies.sqlite`       |
 | Web        | `IE/Edge WebCacheV01.dat`      |
 | Web        | `Edge History`                 |
+| Web        | `Brave History`                |
+| Web        | `Vivaldi History`              |
+| Web        | `Opera History`                |
+| Web        | `Yandex History`               |
 
 </details>
 

@@ -222,9 +222,9 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 | Category       | Artifact                                                                                             | Collection Method |
 | -------------- | ---------------------------------------------------------------------------------------------------- | ----------------- |
 | **EventLogs**  | Security / System / Application Event Log                                                            | NTFS              |
-| **Registry**   | SAM / SECURITY / SOFTWARE / SYSTEM hives                                                             | NTFS              |
-| **Registry**   | Amcache.hve                                                                                          | NTFS              |
-| **Registry**   | NTUSER.DAT / UsrClass.dat (all users)                                                                | NTFS              |
+| **Registry**   | SAM / SECURITY / SOFTWARE / SYSTEM hives (incl. transaction logs: .LOG1 / .LOG2)                    | NTFS              |
+| **Registry**   | Amcache.hve (incl. .LOG1 / .LOG2)                                                                   | NTFS              |
+| **Registry**   | NTUSER.DAT / UsrClass.dat (all users, incl. .LOG1 / .LOG2 and TxR files)                            | NTFS              |
 | **NTFS**       | `$MFT` (Master File Table)                                                                           | NTFS              |
 | **NTFS**       | `$SECURE:$SDS` (Security Descriptor Stream)                                                          | NTFS + ADS        |
 | **NTFS**       | `$UsnJrnl:$J` (USN Journal) — only allocated extents are collected; sparse leading region is skipped | NTFS + ADS        |
@@ -236,6 +236,10 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 | **Web**        | Firefox History & Cookies (places.sqlite / cookies.sqlite)                                           | File              |
 | **Web**        | IE / Edge WebCache (WebCacheV01.dat)                                                                 | File              |
 | **Web**        | Edge History                                                                                         | File              |
+| **Web**        | Brave History                                                                                        | File              |
+| **Web**        | Vivaldi History                                                                                      | File              |
+| **Web**        | Opera History                                                                                        | File              |
+| **Web**        | Yandex Browser History                                                                               | File              |
 
 > **NTFS + ADS:** Alternate Data Streams are acquired via direct MFT reads. This enables access to streams that cannot be read through normal APIs.
 
@@ -343,6 +347,10 @@ Whitelist of artifact names to collect. If empty or omitted, all artifacts are c
 | Web        | `Firefox cookies.sqlite`       |
 | Web        | `IE/Edge WebCacheV01.dat`      |
 | Web        | `Edge History`                 |
+| Web        | `Brave History`                |
+| Web        | `Vivaldi History`              |
+| Web        | `Opera History`                |
+| Web        | `Yandex History`               |
 
 </details>
 
