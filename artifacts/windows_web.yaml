@@ -22,3 +22,23 @@
   category: Web
   target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History"
   method: File
+
+- name: Brave History
+  category: Web
+  target_path: "C:\\Users\\*\\AppData\\Local\\BraveSoftware\\Brave-Browser\\User Data\\Default\\History"
+  method: File
+
+- name: Vivaldi History
+  category: Web
+  target_path: "C:\\Users\\*\\AppData\\Local\\Vivaldi\\User Data\\Default\\History"
+  method: File
+
+- name: Opera History
+  category: Web
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Opera Software\\Opera Stable\\Default\\History"
+  method: File
+
+- name: Yandex History
+  category: Web
+  target_path: "C:\\Users\\*\\AppData\\Local\\Yandex\\YandexBrowser\\User Data\\Default\\History"
+  method: File
