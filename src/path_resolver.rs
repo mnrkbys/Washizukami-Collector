@@ -127,10 +127,17 @@ pub fn expand_env_vars(path: &str) -> String {
 ///
 /// - `*` matches any sequence of characters **within a single path component**
 ///   (it will not cross a directory separator).  Use `**` for recursive descent.
+/// - `**` descends through any number of directory levels, e.g.
+///   `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl`.  Note that a *trailing*
+///   `**` matches directories only — to sweep an entire subtree write `**\*`.
 /// - Matching is **case-insensitive** so that patterns work correctly on NTFS
 ///   regardless of how the filename was originally cased.
 /// - Backslashes are normalised to forward slashes before matching so that
 ///   Windows-style paths (e.g. `C:\Users\*\NTUSER.DAT`) are handled uniformly.
+/// - Directories are **never** returned from a glob expansion: collectors copy
+///   file contents, so a directory match could only ever produce a failure.
+///   This lets recursive patterns like `...\attachments\**\*` be written
+///   without polluting the results with the intermediate directories.
 pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
     let expanded = expand_env_vars(raw_path);
 
@@ -144,7 +151,9 @@ pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
     // well with glob crate's UNC-oriented prefix handling. Expand them by
     // traversing directories component-by-component.
     if is_device_namespace_path(&expanded) {
-        return resolve_device_glob_path(&expanded);
+        let mut results = resolve_device_glob_path(&expanded)?;
+        results.retain(|p| !p.is_dir());
+        return Ok(results);
     }
 
     // Normalise Windows backslashes to forward slashes so the glob engine
@@ -166,6 +175,9 @@ pub fn resolve_path(raw_path: &str) -> Result<Vec<PathBuf>> {
         .with_context(|| format!("invalid glob pattern: {expanded}"))?
     {
         match entry {
+            // Directories are not collectable artifacts; drop them so that
+            // recursive patterns (`**\*`) yield files only.
+            Ok(path) if path.is_dir() => {}
             Ok(path) => results.push(path),
             Err(e) => {
                 // Log but do not abort on permission errors for individual entries.
@@ -394,6 +406,102 @@ mod tests {
             "`*` should not match two levels deep: {:?}",
             paths
         );
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// `**` must descend through an arbitrary number of directory levels.
+    ///
+    /// This backs artifact patterns such as
+    /// `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl`, where the depth
+    /// below `sessions` (year/month/day) is not fixed by the tool that writes
+    /// the files.
+    #[test]
+    fn glob_double_star_descends_recursively() {
+        let tmp = std::env::temp_dir().join("washi_recursive_test");
+        if tmp.exists() {
+            std::fs::remove_dir_all(&tmp).unwrap();
+        }
+
+        // Mirror the Codex CLI layout: sessions\YYYY\MM\DD\rollout-*.jsonl
+        let deep = tmp.join("2026").join("03").join("28");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("rollout-a.jsonl"), b"a").unwrap();
+
+        let shallow = tmp.join("2025").join("12");
+        std::fs::create_dir_all(&shallow).unwrap();
+        std::fs::write(shallow.join("rollout-b.jsonl"), b"b").unwrap();
+
+        // A non-matching name at the same depth must be excluded.
+        std::fs::write(deep.join("notes.txt"), b"x").unwrap();
+
+        let pattern = format!("{}\\**\\rollout-*.jsonl", tmp.to_string_lossy());
+        let mut paths = resolve_path(&pattern).unwrap();
+        paths.sort();
+
+        assert_eq!(
+            paths.len(),
+            2,
+            "`**` should match at any depth, got: {:?}",
+            paths
+        );
+        assert!(paths.iter().all(|p| p
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("rollout-")));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// `**\*` must enumerate every *file* beneath the root, at any depth, and
+    /// must not return the intermediate directories.
+    ///
+    /// This backs `%USERPROFILE%\.codex\attachments\**\*`.  A bare trailing
+    /// `**` would match directories only, which is why the artifact definition
+    /// spells out the `\*` tail.
+    #[test]
+    fn glob_double_star_tail_collects_whole_subtree() {
+        let tmp = std::env::temp_dir().join("washi_recursive_tail_test");
+        if tmp.exists() {
+            std::fs::remove_dir_all(&tmp).unwrap();
+        }
+
+        let nested = tmp.join("session-1").join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(tmp.join("top.bin"), b"t").unwrap();
+        std::fs::write(nested.join("deep.bin"), b"d").unwrap();
+
+        let pattern = format!("{}\\**\\*", tmp.to_string_lossy());
+        let paths = resolve_path(&pattern).unwrap();
+
+        assert_eq!(paths.len(), 2, "expected exactly the 2 files, got: {:?}", paths);
+        assert!(
+            paths.iter().all(|p| p.is_file()),
+            "directories must be filtered out: {:?}",
+            paths
+        );
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Regression guard for the directory filter: a plain `*` pattern over a
+    /// directory that contains subdirectories must return only the files.
+    #[test]
+    fn glob_excludes_directories() {
+        let tmp = std::env::temp_dir().join("washi_dir_filter_test");
+        if tmp.exists() {
+            std::fs::remove_dir_all(&tmp).unwrap();
+        }
+
+        std::fs::create_dir_all(tmp.join("subdir")).unwrap();
+        std::fs::write(tmp.join("file.txt"), b"f").unwrap();
+
+        let pattern = format!("{}\\*", tmp.to_string_lossy());
+        let paths = resolve_path(&pattern).unwrap();
+
+        assert_eq!(paths.len(), 1, "only the file should be returned: {:?}", paths);
+        assert!(paths[0].ends_with("file.txt"));
 
         std::fs::remove_dir_all(&tmp).unwrap();
     }

@@ -474,6 +474,40 @@ washi.exe --category "AI Tools" --dry-run
 
 > **Note on `image-cache`:** If you have never pasted an image into Claude Code, the `image-cache` directory does not exist and will show `⚠ NO MATCH` in dry-run output — this is expected.
 
+### Recipe: Collecting Codex CLI Artifacts
+
+[Codex CLI](https://github.com/openai/codex) stores its local data under `%USERPROFILE%\.codex\`. Rollout logs are appended continuously throughout a session, so NTFS raw read is again the appropriate collection method.
+
+| Path | Contents |
+| ---- | -------- |
+| `%USERPROFILE%\.codex\history.jsonl` | Prompt history: prompt text, session ID, timestamp |
+| `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl` | Per-session event log: session metadata, user/agent messages, reasoning, tool calls and results, task state, token usage, context compaction, errors |
+| `%USERPROFILE%\.codex\attachments\**\*` | Files attached to a Codex CLI session |
+
+Add the following entries to `config.yaml` to collect these artifacts:
+
+```yaml
+artifacts:
+  - name: "Codex CLI history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\history.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI session rollouts"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI attachments"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\attachments\**\*'
+    method: NTFS
+```
+
+> **Why `**`?** Codex writes rollout logs into a dated tree (`sessions\YYYY\MM\DD\`). A fixed number of single-level `*` wildcards would silently miss files, so `**` recursive descent is required. Note that a *trailing* bare `**` matches directories only — write `**\*` to sweep every file in a subtree.
+>
+> **Not collected:** credentials (`auth.json`), configuration (`config.toml`), environment files, shell snapshots, SQLite databases, and internal caches under `%USERPROFILE%\.codex\` are deliberately excluded from these definitions.
+
 ---
 
 ## Memory Acquisition (WinPmem Integration)
