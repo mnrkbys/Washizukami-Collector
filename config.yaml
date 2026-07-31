@@ -152,3 +152,45 @@ artifacts:
     category: "AI Tools"
     target_path: '%USERPROFILE%\.claude\file-history\*'
     method: NTFS
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: Codex CLI local artifacts
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Codex CLI stores prompt history, session recordings, and attachments under
+# %USERPROFILE%\.codex\.
+#
+# method: NTFS is used because Codex CLI may be running and appending to these
+# files during collection (rollout logs are written continuously throughout a
+# session). Direct MFT access bypasses the lock and captures the file as-is.
+#
+# history.jsonl                — prompt history: prompt text, session ID, timestamp
+# sessions\**\rollout-*.jsonl  — detailed per-session event log: session metadata,
+#                                user/agent messages, reasoning, tool calls and their
+#                                results, task state, token usage, context compaction,
+#                                and errors. Codex writes these into a dated tree
+#                                (sessions\YYYY\MM\DD\), so `**` is required —
+#                                a fixed number of `*` levels would miss files.
+# attachments\**\*             — files attached to a Codex CLI session
+#
+# Deliberately NOT collected: credentials (auth.json), configuration
+# (config.toml), environment files, shell snapshots, SQLite databases, and
+# internal caches under %USERPROFILE%\.codex\.
+#
+# Glob note: a trailing bare `**` matches directories only, so the attachments
+# pattern spells out the `\*` tail to sweep every file in the subtree.
+
+  - name: "Codex CLI history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\history.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI session rollouts"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI attachments"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\attachments\**\*'
+    method: NTFS

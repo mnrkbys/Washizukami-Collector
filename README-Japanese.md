@@ -472,6 +472,40 @@ washi.exe --category "AI Tools" --dry-run
 
 > **`image-cache` について:** Claude Code で画像を貼り付けたことがない場合、`image-cache` ディレクトリは存在しないため dry-run では `⚠ NO MATCH` と表示されます。これは正常な動作です。
 
+### 応用例: Codex CLI ローカルアーティファクトの収集
+
+[Codex CLI](https://github.com/openai/codex) はローカルデータを `%USERPROFILE%\.codex\` 配下に保存します。ロールアウトログはセッション中に継続的に追記されるため、こちらも NTFS Raw Read による収集が適切です。
+
+| パス | 内容 |
+| ---- | ---- |
+| `%USERPROFILE%\.codex\history.jsonl` | プロンプト履歴（プロンプト本文・セッション ID・タイムスタンプ） |
+| `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl` | セッション単位の詳細イベントログ（セッションメタデータ、ユーザー／エージェントメッセージ、reasoning、ツール呼び出しと実行結果、タスク状態、トークン使用量、コンテキスト圧縮、エラー情報） |
+| `%USERPROFILE%\.codex\attachments\**\*` | Codex CLI セッションで使用された添付ファイル |
+
+`config.yaml` に以下を追加することで収集できます。
+
+```yaml
+artifacts:
+  - name: "Codex CLI history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\history.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI session rollouts"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI attachments"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\attachments\**\*'
+    method: NTFS
+```
+
+> **`**` を使う理由:** Codex はロールアウトログを日付ツリー（`sessions\YYYY\MM\DD\`）に書き出します。単一階層の `*` を固定個数並べた指定では取りこぼしが発生するため、再帰展開する `**` が必要です。なお、末尾が単独の `**` の場合はディレクトリのみに一致するため、配下のファイルをすべて収集するには `**\*` と記述します。
+>
+> **収集対象外:** 認証情報（`auth.json`）、設定（`config.toml`）、環境ファイル、shell snapshots、SQLite データベース、内部キャッシュは、これらの定義には意図的に含めていません。
+
 ---
 
 ## メモリ取得（winpmem 連携）
