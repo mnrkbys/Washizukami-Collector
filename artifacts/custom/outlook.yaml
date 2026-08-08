@@ -1,0 +1,34 @@
+# Custom artifact definitions — Microsoft Outlook mailbox files
+#
+# Not part of the Washizukami Core Set.
+#
+# The .pst location depends on the Outlook edition, the Windows display language
+# and whether OneDrive Known Folder Move is enabled, so there is no single path
+# that is correct across environments. The path below covers one specific and
+# common Japanese layout:
+#
+#   Japanese Windows + Classic Outlook (not the New Outlook app) + OneDrive enabled
+#
+# Verify against the target host with --dry-run before relying on it, and adjust
+# target_path for other layouts.
+#
+# Usage
+# -----
+# Copy this file next to washi.exe and rename it to `config.yaml`, or merge the
+# `artifacts:` entries below into an existing `config.yaml`. Then:
+#
+#   washi.exe --dry-run --category Mail
+#   washi.exe --category Mail
+#
+# method: NTFS is required because Classic Outlook holds an exclusive lock on
+# .pst files while running. Direct MFT access bypasses the lock and allows
+# collection without closing Outlook.
+#
+# SIZE WARNING: .pst files are routinely several GB each. Always run --dry-run
+# first to check total size against the free space on the collection target.
+
+artifacts:
+  - name: "Outlook PST Files"
+    category: "Mail"
+    target_path: 'C:\Users\*\OneDrive\ドキュメント\Outlook ファイル\*.pst'
+    method: NTFS

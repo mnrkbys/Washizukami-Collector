@@ -1,0 +1,43 @@
+# Custom artifact definitions — Chromium-derivative browsers
+#
+# Not part of the Washizukami Core Set.
+#
+# The Core Set covers Chrome, Edge and Firefox — the browsers present on
+# essentially every Windows host in scope for an incident. The browsers below
+# are Chromium derivatives that share Chrome's schema and relative paths, but
+# are only installed deliberately, so collecting them by default would mean
+# resolving four extra globs across every user profile on every host.
+#
+# Usage
+# -----
+# Copy this file next to washi.exe and rename it to `config.yaml`, or merge the
+# `artifacts:` entries below into an existing `config.yaml`.
+#
+# The entries use `category: Web`, so they are collected together with the Core
+# browser artifacts and land in the same `Web\` output subtree:
+#
+#   washi.exe --dry-run --category Web
+#
+# Each `History` file is a SQLite database holding visit history, downloads and
+# search terms, readable with the same tooling used for Chrome.
+
+artifacts:
+  - name: Brave History
+    category: Web
+    target_path: "C:\\Users\\*\\AppData\\Local\\BraveSoftware\\Brave-Browser\\User Data\\Default\\History"
+    method: File
+
+  - name: Vivaldi History
+    category: Web
+    target_path: "C:\\Users\\*\\AppData\\Local\\Vivaldi\\User Data\\Default\\History"
+    method: File
+
+  - name: Opera History
+    category: Web
+    target_path: "C:\\Users\\*\\AppData\\Roaming\\Opera Software\\Opera Stable\\Default\\History"
+    method: File
+
+  - name: Yandex History
+    category: Web
+    target_path: "C:\\Users\\*\\AppData\\Local\\Yandex\\YandexBrowser\\User Data\\Default\\History"
+    method: File

@@ -1,0 +1,41 @@
+# Custom artifact definitions — Paging / Hibernation files
+#
+# Not part of the Washizukami Core Set.
+#
+# These files can contain fragments of process memory (credentials, decrypted
+# payloads, network buffers) and are therefore valuable, but they are excluded
+# from the Core Set because their size makes them unsuitable for a fast triage
+# collection: pagefile.sys and hiberfil.sys are each typically sized in
+# proportion to installed RAM, so a 16 GB host commonly yields 20-30 GB total.
+#
+# Usage
+# -----
+# Copy this file next to washi.exe and rename it to `config.yaml`, or merge the
+# `artifacts:` entries below into an existing `config.yaml`.
+#
+# Once loaded, the `Paging` category becomes available to the CLI:
+#
+#   washi.exe --dry-run --category Paging     # check sizes first
+#   washi.exe --category Paging
+#
+# Always run --dry-run first. On a host with a large amount of RAM these three
+# files alone can exceed the free space on the collection target.
+#
+# hiberfil.sys is absent when hibernation is disabled (`powercfg /h off`),
+# and swapfile.sys is absent when no Store apps have been run.
+
+artifacts:
+  - name: pagefile.sys
+    category: Paging
+    target_path: "%SystemDrive%\\pagefile.sys"
+    method: NTFS
+
+  - name: swapfile.sys
+    category: Paging
+    target_path: "%SystemDrive%\\swapfile.sys"
+    method: NTFS
+
+  - name: hiberfil.sys
+    category: Paging
+    target_path: "%SystemDrive%\\hiberfil.sys"
+    method: NTFS

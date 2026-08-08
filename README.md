@@ -72,7 +72,7 @@ The simplest way to use Washizukami is to **double-click `washi.exe`** in Explor
 
 No configuration needed. Just right-click → **Run as administrator**, and collection starts immediately with default settings:
 
-- Collects **all built-in artifacts**
+- Collects the entire **Core Set** (see [Collected Artifacts](#collected-artifacts))
 - Output folder: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\`** (created next to `washi.exe`, when NTFS uses `%AllNtfsDrives%`)
 - Audit log: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\collection.log`** (with SHA-256 hashes)
 
@@ -95,7 +95,8 @@ Options:
   -c, --category <CATEGORY>        Filter by category (repeatable, case-insensitive).
                                    Without prefix: collect only these categories.
                                    With '!' prefix: exclude these categories.
-                                   Available: EventLogs, Registry, NTFS, Paging, Filesystem, WMI, SRUM, Web
+                                   Available: EventLogs, Registry, NTFS, Filesystem, WMI, SRUM, Web
+                                   Custom definitions loaded via config.yaml add their own categories.
       --dry-run                    Display path resolution results only (no files are collected)
       --zip                        Generate a ZIP archive after collection
       --mem                        Capture memory dump with tools\winpmem*.exe (runs before collection)
@@ -217,7 +218,18 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 
 ## Collected Artifacts
 
-Below is the list of artifacts covered by the built-in definitions. You can also add custom definitions via `config.yaml` (see "Customizing Artifact Definitions" for details).
+Artifact definitions come in exactly two kinds. See [`artifacts/README.md`](artifacts/README.md) for the full classification rules.
+
+| | Core | Custom |
+| --- | --- | --- |
+| Location | `artifacts/core/` | `artifacts/custom/` |
+| Shipped | Embedded in `washi.exe` | Sample files in this repository |
+| Collected | By default, with no configuration | Only after being loaded via `config.yaml` |
+| Maintenance | Continuously verified and maintained | Provided as-is |
+
+### Core Set
+
+Collected by default. This is what you get by double-clicking `washi.exe`.
 
 | Category       | Artifact                                                                                             | Collection Method |
 | -------------- | ---------------------------------------------------------------------------------------------------- | ----------------- |
@@ -236,14 +248,29 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 | **Web**        | Firefox History & Cookies (places.sqlite / cookies.sqlite)                                           | File              |
 | **Web**        | IE / Edge WebCache (WebCacheV01.dat)                                                                 | File              |
 | **Web**        | Edge History                                                                                         | File              |
-| **Web**        | Brave History                                                                                        | File              |
-| **Web**        | Vivaldi History                                                                                      | File              |
-| **Web**        | Opera History                                                                                        | File              |
-| **Web**        | Yandex Browser History                                                                               | File              |
 
 > **NTFS + ADS:** Alternate Data Streams are acquired via direct MFT reads. This enables access to streams that cannot be read through normal APIs.
 
-> **All NTFS drives:** Built-in NTFS metadata artifacts use `%AllNtfsDrives%` and are expanded to every OS-recognized NTFS drive. Non-NTFS drives are skipped automatically.
+> **All NTFS drives:** Core NTFS metadata artifacts use `%AllNtfsDrives%` and are expanded to every OS-recognized NTFS drive. Non-NTFS drives are skipped automatically.
+
+### Custom Definitions
+
+Not collected by default. Each file under `artifacts/custom/` is already shaped like a `config.yaml`, so you can either copy one next to `washi.exe` and rename it to `config.yaml`, or merge its `artifacts:` entries into an existing `config.yaml`.
+
+| File | Category | Artifact | Why it is not Core |
+| --- | --- | --- | --- |
+| `custom/paging.yaml` | `Paging` | `pagefile.sys` / `swapfile.sys` / `hiberfil.sys` | Sized in proportion to installed RAM — commonly 20-30 GB together. Valuable, but incompatible with a fast triage default. |
+| `custom/browsers-extra.yaml` | `Web` | Brave / Vivaldi / Opera / Yandex history | Chromium derivatives installed only deliberately. |
+| `custom/ai-tools.yaml` | `AI Tools` | Claude Code / Codex CLI local data | On-disk layout changes on the tools' own release cycle, and prompt history is unusually privacy-sensitive. |
+| `custom/outlook.yaml` | `Mail` | Classic Outlook `.pst` files | The path varies by Outlook edition, display language and OneDrive configuration. |
+
+```powershell
+# After copying artifacts\custom\paging.yaml next to washi.exe as config.yaml
+washi.exe --dry-run --category Paging   # confirm sizes first
+washi.exe --category Paging
+```
+
+> Until a Custom definition is loaded this way, its category is unknown to the CLI and `--category` will reject it.
 
 ---
 
@@ -305,9 +332,9 @@ Below is the list of artifacts covered by the built-in definitions. You can also
 
 ## Customizing Artifact Definitions
 
-The built-in definitions cover Windows event logs, registry hives, and common filesystem artifacts. By placing a `config.yaml` in the same folder as `washi.exe`, you can narrow collection targets or add custom artifacts.
+The Core Set covers Windows event logs, registry hives, and common filesystem artifacts. By placing a `config.yaml` in the same folder as `washi.exe`, you can narrow collection targets or add Custom artifacts.
 
-**Priority:** CLI flags > `config.yaml` > built-in defaults
+**Priority:** CLI flags > `config.yaml` > Core Set (embedded)
 
 ### Filters
 
@@ -316,7 +343,7 @@ The built-in definitions cover Windows event logs, registry hives, and common fi
 Whitelist of artifact names to collect. If empty or omitted, all artifacts are collected. Matching is case-insensitive.
 
 <details>
-<summary>Built-in artifact names</summary>
+<summary>Core Set artifact names</summary>
 
 | Category   | Name                           |
 | ---------- | ------------------------------ |
@@ -333,9 +360,6 @@ Whitelist of artifact names to collect. If empty or omitted, all artifacts are c
 | NTFS       | `$MFT`                         |
 | NTFS       | `$SECURE:$SDS`                 |
 | NTFS       | `$UsnJrnl:$J`                  |
-| Paging     | `pagefile.sys`                 |
-| Paging     | `swapfile.sys`                 |
-| Paging     | `hiberfil.sys`                 |
 | Filesystem | `Prefetch Files`               |
 | Filesystem | `Recent LNK Files`             |
 | WMI        | `WMI Repository OBJECTS.DATA`  |
@@ -347,22 +371,18 @@ Whitelist of artifact names to collect. If empty or omitted, all artifacts are c
 | Web        | `Firefox cookies.sqlite`       |
 | Web        | `IE/Edge WebCacheV01.dat`      |
 | Web        | `Edge History`                 |
-| Web        | `Brave History`                |
-| Web        | `Vivaldi History`              |
-| Web        | `Opera History`                |
-| Web        | `Yandex History`               |
 
 </details>
 
 #### `disabled_categories`
 
-Excludes entire categories from collection. Valid values: `EventLogs` / `Registry` / `NTFS` / `Paging` / `Filesystem` / `WMI` / `SRUM` / `Web` (case-insensitive).
+Excludes entire categories from collection. Valid values: `EventLogs` / `Registry` / `NTFS` / `Filesystem` / `WMI` / `SRUM` / `Web` (case-insensitive), plus any category introduced by Custom definitions in the same `config.yaml`.
 
 > **Note:** `disabled_categories` is evaluated **after** `enabled_artifacts`. An artifact explicitly listed in `enabled_artifacts` will still be excluded if its category appears in `disabled_categories`.
 
 ### Custom Artifact Definitions
 
-Use the `artifacts` key to add artifacts not covered by the built-in definitions. If a custom entry shares the same `name` as a built-in artifact, the custom definition takes priority.
+Use the `artifacts` key to add artifacts that are not part of the Core Set. If a custom entry shares the same `name` as a Core artifact, the custom definition takes priority.
 
 Required fields:
 
@@ -406,107 +426,57 @@ artifacts:
     method: File
 ```
 
-### Recipe: Collecting Outlook .pst Files
+### Loading a Custom Definition
 
-Classic Outlook (not the New Outlook app) stores `.pst` files in a location that varies by environment. On **Japanese Windows with OneDrive enabled**, the default path is:
+Each file under [`artifacts/custom/`](artifacts/custom/) is already shaped like a `config.yaml`. To use one, copy it next to `washi.exe` and rename it to `config.yaml`, or merge its `artifacts:` entries into an existing `config.yaml`. Then confirm the result with `--dry-run` before collecting for real.
+
+#### `custom/paging.yaml` — Paging / hibernation files
+
+`pagefile.sys` and `hiberfil.sys` are sized in proportion to installed RAM, so a 16 GB host commonly yields 20-30 GB in total. They can hold fragments of process memory (credentials, decrypted payloads, network buffers).
+
+> **Size warning:** always run `--dry-run --category Paging` first. On a host with a large amount of RAM these three files alone can exceed the free space on the collection target.
+>
+> `hiberfil.sys` is absent when hibernation is disabled (`powercfg /h off`), and `swapfile.sys` is absent when no Store apps have been run.
+
+#### `custom/browsers-extra.yaml` — Chromium-derivative browsers
+
+Brave, Vivaldi, Opera and Yandex. These entries use `category: Web`, so they are collected together with the Core browser artifacts and land in the same `Web\` output subtree. Each `History` file is a SQLite database readable with the same tooling used for Chrome.
+
+#### `custom/ai-tools.yaml` — Claude Code / Codex CLI
+
+[Claude Code](https://claude.ai/code) stores its local data under `%USERPROFILE%\.claude\`, and [Codex CLI](https://github.com/openai/codex) under `%USERPROFILE%\.codex\`.
+
+| Path | Contents |
+| ---- | -------- |
+| `.claude\history.jsonl` | Full record of all prompt inputs entered by the user |
+| `.claude\paste-cache\*` | Large text pastes stored externally to keep `history.jsonl` compact |
+| `.claude\image-cache\*` | Large image pastes (same reason as paste-cache) |
+| `.claude\file-history\*` | Pre-edit snapshots of files modified by Claude Code |
+| `.codex\history.jsonl` | Prompt history: prompt text, session ID, timestamp |
+| `.codex\sessions\**\rollout-*.jsonl` | Per-session event log: session metadata, user/agent messages, reasoning, tool calls and results, task state, token usage, context compaction, errors |
+| `.codex\attachments\**\*` | Files attached to a Codex CLI session |
+
+All entries use `method: NTFS` because these tools may be running and holding file locks during collection — Codex CLI in particular appends to its rollout logs continuously throughout a session.
+
+> **Why `**`?** Codex writes rollout logs into a dated tree (`sessions\YYYY\MM\DD\`). A fixed number of single-level `*` wildcards would silently miss files, so `**` recursive descent is required. Note that a *trailing* bare `**` matches directories only — write `**\*` to sweep every file in a subtree.
+>
+> **Not collected:** credentials (`auth.json`), configuration (`config.toml`), environment files, shell snapshots, SQLite databases, and internal caches are deliberately excluded from these definitions.
+>
+> **Note on `image-cache`:** if you have never pasted an image into Claude Code, the directory does not exist and will show `⚠ NO MATCH` in dry-run output — this is expected.
+
+#### `custom/outlook.yaml` — Classic Outlook `.pst` files
+
+Classic Outlook (not the New Outlook app) stores `.pst` files in a location that varies by Outlook edition, Windows display language and OneDrive configuration. The shipped definition covers **Japanese Windows with OneDrive enabled**:
 
 ```
 C:\Users\<username>\OneDrive\ドキュメント\Outlook ファイル\*.pst
 ```
 
-Add the following entry to `config.yaml` to collect `.pst` files across all user profiles:
-
-```yaml
-artifacts:
-  - name: "Outlook PST Files"
-    category: "Mail"
-    target_path: "C:\\Users\\*\\OneDrive\\ドキュメント\\Outlook ファイル\\*.pst"
-    method: NTFS
-```
+Adjust `target_path` for other layouts, and verify with `--dry-run` before relying on it.
 
 > **Why `method: NTFS`?** Classic Outlook holds an exclusive lock on `.pst` files while running. Using NTFS raw read bypasses the lock and allows collection without closing Outlook.
 >
 > **Size warning:** `.pst` files can be several GB. Run `--dry-run` first to check sizes before collecting.
-
-### Recipe: Collecting Claude Code Artifacts
-
-[Claude Code](https://claude.ai/code) stores its local data under `%USERPROFILE%\.claude\`. These files may be locked while Claude Code is running, making NTFS raw read the appropriate collection method.
-
-| Path | Contents |
-| ---- | -------- |
-| `%USERPROFILE%\.claude\history.jsonl` | Full record of all prompt inputs entered by the user |
-| `%USERPROFILE%\.claude\paste-cache\*` | Large text pastes stored externally to keep `history.jsonl` compact |
-| `%USERPROFILE%\.claude\image-cache\*` | Large image pastes (same reason as paste-cache) |
-| `%USERPROFILE%\.claude\file-history\*` | Pre-edit snapshots of files modified by Claude Code |
-
-Add the following entries to `config.yaml` to collect these artifacts:
-
-```yaml
-artifacts:
-  - name: "Claude Code history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\history.jsonl'
-    method: NTFS
-
-  - name: "Claude Code paste-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\paste-cache\*'
-    method: NTFS
-
-  - name: "Claude Code image-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\image-cache\*'
-    method: NTFS
-
-  - name: "Claude Code file-history"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\file-history\*'
-    method: NTFS
-```
-
-A ready-to-use `config.yaml` with these definitions is included in this repository.
-
-To verify what would be collected before running:
-
-```powershell
-washi.exe --category "AI Tools" --dry-run
-```
-
-> **Note on `image-cache`:** If you have never pasted an image into Claude Code, the `image-cache` directory does not exist and will show `⚠ NO MATCH` in dry-run output — this is expected.
-
-### Recipe: Collecting Codex CLI Artifacts
-
-[Codex CLI](https://github.com/openai/codex) stores its local data under `%USERPROFILE%\.codex\`. Rollout logs are appended continuously throughout a session, so NTFS raw read is again the appropriate collection method.
-
-| Path | Contents |
-| ---- | -------- |
-| `%USERPROFILE%\.codex\history.jsonl` | Prompt history: prompt text, session ID, timestamp |
-| `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl` | Per-session event log: session metadata, user/agent messages, reasoning, tool calls and results, task state, token usage, context compaction, errors |
-| `%USERPROFILE%\.codex\attachments\**\*` | Files attached to a Codex CLI session |
-
-Add the following entries to `config.yaml` to collect these artifacts:
-
-```yaml
-artifacts:
-  - name: "Codex CLI history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\history.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI session rollouts"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI attachments"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\attachments\**\*'
-    method: NTFS
-```
-
-> **Why `**`?** Codex writes rollout logs into a dated tree (`sessions\YYYY\MM\DD\`). A fixed number of single-level `*` wildcards would silently miss files, so `**` recursive descent is required. Note that a *trailing* bare `**` matches directories only — write `**\*` to sweep every file in a subtree.
->
-> **Not collected:** credentials (`auth.json`), configuration (`config.toml`), environment files, shell snapshots, SQLite databases, and internal caches under `%USERPROFILE%\.codex\` are deliberately excluded from these definitions.
 
 ---
 
@@ -558,13 +528,13 @@ The `scan` subcommand was implemented in v0.4.0. The following enhancements are 
 
 ### Email Client Artifacts
 
-#### Microsoft Outlook `.pst` — available now via `config.yaml`
+#### Microsoft Outlook `.pst` — available now as a Custom definition
 
-Classic Outlook `.pst` collection is already supported through custom artifact definitions. See the [Recipe: Collecting Outlook .pst Files](#recipe-collecting-outlook-pst-files) section for configuration details.
+Classic Outlook `.pst` collection is already supported via [`artifacts/custom/outlook.yaml`](artifacts/custom/outlook.yaml). See [`custom/outlook.yaml` — Classic Outlook `.pst` files](#customoutlookyaml--classic-outlook-pst-files) for details.
 
-#### Planned built-in support
+#### Planned Custom definitions
 
-The following are planned as future built-in definitions:
+The following are planned as future Custom definitions:
 
 | Client                  | Target Files                                                      |
 | ----------------------- | ----------------------------------------------------------------- |
