@@ -45,7 +45,10 @@ pub fn map_live_path_to_snapshot(snapshot: &ShadowCopy, live_path: &Path) -> Opt
 
     let suffix = &live_path_str[2..];
     let suffix = suffix.trim_start_matches(['\\', '/']);
-    let mut mapped = snapshot.device_object.trim_end_matches(['\\', '/']).to_owned();
+    let mut mapped = snapshot
+        .device_object
+        .trim_end_matches(['\\', '/'])
+        .to_owned();
     if !suffix.is_empty() {
         mapped.push('\\');
         mapped.push_str(&suffix.replace('/', "\\"));
@@ -115,11 +118,10 @@ pub fn snapshots_for_volume(volume: &str) -> Result<Vec<ShadowCopy>> {
 
     let normalized_volume = normalize_volume_name(volume_guid_path(volume)?);
     let com_lib = COMLibrary::new().context("failed to initialize COM library")?;
-    let connection = WMIConnection::new(com_lib).context("failed to connect to WMI for VSS enumeration")?;
+    let connection =
+        WMIConnection::new(com_lib).context("failed to connect to WMI for VSS enumeration")?;
     let rows: Vec<ShadowCopyRow> = connection
-        .raw_query(
-            "SELECT ID, DeviceObject, VolumeName, InstallDate, State FROM Win32_ShadowCopy",
-        )
+        .raw_query("SELECT ID, DeviceObject, VolumeName, InstallDate, State FROM Win32_ShadowCopy")
         .context("failed to query Win32_ShadowCopy")?;
 
     let mut snapshots = Vec::new();
@@ -155,18 +157,21 @@ fn volume_guid_path(volume: &str) -> Result<String> {
     use windows::core::PCWSTR;
 
     let mount_point = ensure_mount_point(volume);
-    let mount_point_wide: Vec<u16> = mount_point.encode_utf16().chain(std::iter::once(0)).collect();
+    let mount_point_wide: Vec<u16> = mount_point
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
     let mut buffer = vec![0u16; 128];
 
     unsafe {
-        GetVolumeNameForVolumeMountPointW(
-            PCWSTR(mount_point_wide.as_ptr()),
-            &mut buffer,
-        )
-        .with_context(|| format!("failed to resolve volume GUID path for {mount_point}"))?;
+        GetVolumeNameForVolumeMountPointW(PCWSTR(mount_point_wide.as_ptr()), &mut buffer)
+            .with_context(|| format!("failed to resolve volume GUID path for {mount_point}"))?;
     }
 
-    let len = buffer.iter().position(|&ch| ch == 0).unwrap_or(buffer.len());
+    let len = buffer
+        .iter()
+        .position(|&ch| ch == 0)
+        .unwrap_or(buffer.len());
     Ok(String::from_utf16_lossy(&buffer[..len]))
 }
 
@@ -211,7 +216,10 @@ mod tests {
 
     #[test]
     fn path_drive_extracts_drive_letter() {
-        assert_eq!(path_drive(Path::new(r"C:\Windows\System32")), Some("C:".to_owned()));
+        assert_eq!(
+            path_drive(Path::new(r"C:\Windows\System32")),
+            Some("C:".to_owned())
+        );
         assert_eq!(path_drive(Path::new(r"d:\Temp")), Some("D:".to_owned()));
         assert_eq!(path_drive(Path::new(r"relative\path")), None);
     }
@@ -226,15 +234,21 @@ mod tests {
 
         assert_eq!(
             mapped,
-            PathBuf::from(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM")
+            PathBuf::from(
+                r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM"
+            )
         );
     }
 
     #[test]
     fn map_live_path_to_snapshot_rejects_non_drive_paths() {
-        assert!(map_live_path_to_snapshot(&sample_snapshot(), Path::new(r"\\server\share\file"))
-            .is_none());
-        assert!(map_live_path_to_snapshot(&sample_snapshot(), Path::new(r"relative\path")).is_none());
+        assert!(
+            map_live_path_to_snapshot(&sample_snapshot(), Path::new(r"\\server\share\file"))
+                .is_none()
+        );
+        assert!(
+            map_live_path_to_snapshot(&sample_snapshot(), Path::new(r"relative\path")).is_none()
+        );
     }
 
     #[test]

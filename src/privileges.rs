@@ -6,7 +6,7 @@
 pub fn is_elevated() -> bool {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Security::{
-        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+        GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
     };
     use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 

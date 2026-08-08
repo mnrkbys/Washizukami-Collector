@@ -4,7 +4,7 @@
 /// `ntfs` crate to walk the MFT directly, bypassing any OS file locks that
 /// would prevent normal `std::fs` access to in-use files such as the registry
 /// hives or the Security event log.
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use ntfs::attribute_value::NtfsAttributeValue;
 use ntfs::indexes::NtfsFileNameIndex;
 use ntfs::{Ntfs, NtfsFile, NtfsReadSeek};
@@ -136,7 +136,10 @@ impl Seek for SectorAlignedReader {
             SeekFrom::Current(n) => {
                 let p = self.pos as i64 + n;
                 if p < 0 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "seek before start",
+                    ));
                 }
                 p as u64
             }
@@ -145,7 +148,10 @@ impl Seek for SectorAlignedReader {
             SeekFrom::End(n) => {
                 let p = self.total_size as i64 + n;
                 if p < 0 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "seek before start",
+                    ));
                 }
                 p as u64
             }
@@ -251,8 +257,9 @@ impl NtfsReader {
         let file = traverse(&self.ntfs, &mut self.source, &components)?;
 
         if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("cannot create output directory '{}'", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("cannot create output directory '{}'", parent.display())
+            })?;
         }
 
         let out = File::create(dest)
@@ -260,19 +267,24 @@ impl NtfsReader {
         let mut writer = BufWriter::new(out);
 
         let stream_name = stream.unwrap_or("");
-        let (bytes, sha256) =
-            copy_data(&self.ntfs, &mut self.source, &file, stream_name, &mut writer)
-                .with_context(|| {
-                    if stream_name.is_empty() {
-                        format!("error extracting '{}'", ntfs_path.display())
-                    } else {
-                        format!(
-                            "error extracting '{}' (stream: {})",
-                            ntfs_path.display(),
-                            stream_name
-                        )
-                    }
-                })?;
+        let (bytes, sha256) = copy_data(
+            &self.ntfs,
+            &mut self.source,
+            &file,
+            stream_name,
+            &mut writer,
+        )
+        .with_context(|| {
+            if stream_name.is_empty() {
+                format!("error extracting '{}'", ntfs_path.display())
+            } else {
+                format!(
+                    "error extracting '{}' (stream: {})",
+                    ntfs_path.display(),
+                    stream_name
+                )
+            }
+        })?;
 
         writer.flush().context("flush error")?;
         Ok((bytes, sha256))
@@ -283,11 +295,7 @@ impl NtfsReader {
 
 /// Walk the directory tree component-by-component and return the target
 /// [`NtfsFile`].
-fn traverse<'n, T>(
-    ntfs: &'n Ntfs,
-    source: &mut T,
-    components: &[String],
-) -> Result<NtfsFile<'n>>
+fn traverse<'n, T>(ntfs: &'n Ntfs, source: &mut T, components: &[String]) -> Result<NtfsFile<'n>>
 where
     T: Read + Seek,
 {
@@ -504,19 +512,13 @@ mod tests {
     #[test]
     fn path_components_strips_drive_letter() {
         let p = Path::new(r"C:\Windows\System32\config\SAM");
-        assert_eq!(
-            path_components(p),
-            ["Windows", "System32", "config", "SAM"]
-        );
+        assert_eq!(path_components(p), ["Windows", "System32", "config", "SAM"]);
     }
 
     #[test]
     fn path_components_relative() {
         let p = Path::new(r"Windows\System32\config\SAM");
-        assert_eq!(
-            path_components(p),
-            ["Windows", "System32", "config", "SAM"]
-        );
+        assert_eq!(path_components(p), ["Windows", "System32", "config", "SAM"]);
     }
 
     #[test]

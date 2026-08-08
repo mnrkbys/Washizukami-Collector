@@ -11,8 +11,8 @@ fn main() {
 
     // Absolute path to the icon so windres can find it regardless of CWD.
     let icon_path = format!("{}/assets/washi.ico", manifest_dir).replace('\\', "/");
-    let rc_path   = format!("{}/resource.rc", out_dir);
-    let o_path    = format!("{}/resource.o", out_dir);
+    let rc_path = format!("{}/resource.rc", out_dir);
+    let o_path = format!("{}/resource.o", out_dir);
 
     // Write a minimal .rc file embedding just the icon.
     std::fs::write(&rc_path, format!("1 ICON \"{}\"\n", icon_path))
@@ -20,7 +20,13 @@ fn main() {
 
     // Compile with windres (MinGW).  windres must be on PATH.
     let status = std::process::Command::new("windres")
-        .args(["--input", &rc_path, "--output", &o_path, "--output-format=coff"])
+        .args([
+            "--input",
+            &rc_path,
+            "--output",
+            &o_path,
+            "--output-format=coff",
+        ])
         .status()
         .expect("windres not found — ensure C:\\msys64\\mingw64\\bin is on PATH");
 
