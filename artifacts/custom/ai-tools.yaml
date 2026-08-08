@@ -1,0 +1,86 @@
+# Custom artifact definitions — AI coding assistants
+#
+# Not part of the Washizukami Core Set.
+#
+# Two reasons these are Custom rather than Core:
+#
+#   1. The on-disk layout of these tools changes with their own release cycle,
+#      which is far faster than Windows'. A path verified today may move in a
+#      release next month, so it cannot carry a continuous-verification promise.
+#   2. Prompt history is unusually sensitive — it records everything the user
+#      typed, frequently including business data and third-party personal
+#      information. Making that a default collection target is a decision for
+#      the investigating organisation, not a tool default.
+#
+# Usage
+# -----
+# Copy this file next to washi.exe and rename it to `config.yaml`, or merge the
+# `artifacts:` entries below into an existing `config.yaml`. Then:
+#
+#   washi.exe --dry-run --category "AI Tools"
+#   washi.exe --category "AI Tools"
+#
+# All entries use `method: NTFS` because these tools may be running and holding
+# file locks during collection — Codex CLI in particular appends to its rollout
+# logs continuously throughout a session. Direct MFT access bypasses the lock
+# and captures the file as-is.
+#
+# Deliberately NOT collected: credentials (auth.json), configuration
+# (config.toml), environment files, shell snapshots, SQLite databases and
+# internal caches.
+
+artifacts:
+  # ── Claude Code (%USERPROFILE%\.claude\) ────────────────────────────────────
+  # history.jsonl  — full record of all prompt inputs entered by the user
+  # paste-cache\*  — large text pastes (stored externally to keep history.jsonl compact)
+  # image-cache\*  — large image pastes (same reason as paste-cache)
+  # file-history\* — pre-edit snapshots of files modified by Claude Code
+
+  - name: "Claude Code history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\history.jsonl'
+    method: NTFS
+
+  - name: "Claude Code paste-cache"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\paste-cache\*'
+    method: NTFS
+
+  - name: "Claude Code image-cache"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\image-cache\*'
+    method: NTFS
+
+  - name: "Claude Code file-history"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.claude\file-history\*'
+    method: NTFS
+
+  # ── Codex CLI (%USERPROFILE%\.codex\) ───────────────────────────────────────
+  # history.jsonl               — prompt text, session ID, timestamp
+  # sessions\**\rollout-*.jsonl — per-session event log: session metadata,
+  #                               user/agent messages, reasoning, tool calls and
+  #                               their results, task state, token usage, context
+  #                               compaction, and errors. Codex writes these into
+  #                               a dated tree (sessions\YYYY\MM\DD\), so `**` is
+  #                               required — a fixed number of `*` levels would
+  #                               miss files.
+  # attachments\**\*            — files attached to a Codex CLI session
+  #
+  # Glob note: a trailing bare `**` matches directories only, so the attachments
+  # pattern spells out the `\*` tail to sweep every file in the subtree.
+
+  - name: "Codex CLI history.jsonl"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\history.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI session rollouts"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
+    method: NTFS
+
+  - name: "Codex CLI attachments"
+    category: "AI Tools"
+    target_path: '%USERPROFILE%\.codex\attachments\**\*'
+    method: NTFS

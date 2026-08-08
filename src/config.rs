@@ -1,8 +1,14 @@
 //! Artifact definition management.
 //!
-//! Standard definitions are **embedded in the binary** at compile time via
-//! `include_str!`, so the tool works as a single executable without needing
-//! the `artifacts/` directory at runtime.
+//! Definitions come in exactly two kinds — see `artifacts/README.md`:
+//!
+//! * **Core** (`artifacts/core/*.yaml`) — the Washizukami Core Set. These are
+//!   **embedded in the binary** at compile time via `include_str!`, so the tool
+//!   works as a single executable without needing the `artifacts/` directory at
+//!   runtime, and they are collected by default with no configuration.
+//! * **Custom** (`artifacts/custom/*.yaml`) — not part of the Core Set and not
+//!   embedded. These are sample files shipped in the repository; an operator
+//!   loads one by copying it beside the executable as `config.yaml`.
 //!
 //! An optional `config.yaml` placed beside the executable lets operators
 //! add custom artifact definitions and/or filter which artifacts are
@@ -21,27 +27,30 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-// ── Embedded YAML sources ─────────────────────────────────────────────────────
+// ── Embedded YAML sources (Core Set) ──────────────────────────────────────────
+//
+// Only `artifacts/core/` is embedded.  `artifacts/custom/` is deliberately
+// *not* embedded: those definitions are opt-in and reach the tool through
+// `config.yaml`.  Adding or renaming a file under `artifacts/core/` requires a
+// matching entry in `EMBEDDED_SOURCES` below.
 
-const EMBEDDED_EVENTLOGS: &str = include_str!("../artifacts/windows_eventlogs.yaml");
-const EMBEDDED_REGISTRY: &str = include_str!("../artifacts/windows_registry.yaml");
-const EMBEDDED_NTFS: &str = include_str!("../artifacts/windows_ntfs.yaml");
-const EMBEDDED_PAGING: &str = include_str!("../artifacts/windows_paging.yaml");
-const EMBEDDED_FILESYSTEM: &str = include_str!("../artifacts/windows_filesystem.yaml");
-const EMBEDDED_WMI: &str = include_str!("../artifacts/windows_wmi.yaml");
-const EMBEDDED_SRUM: &str = include_str!("../artifacts/windows_srum.yaml");
-const EMBEDDED_WEB: &str = include_str!("../artifacts/windows_web.yaml");
+const EMBEDDED_EVENTLOGS: &str = include_str!("../artifacts/core/windows_eventlogs.yaml");
+const EMBEDDED_REGISTRY: &str = include_str!("../artifacts/core/windows_registry.yaml");
+const EMBEDDED_NTFS: &str = include_str!("../artifacts/core/windows_ntfs.yaml");
+const EMBEDDED_FILESYSTEM: &str = include_str!("../artifacts/core/windows_filesystem.yaml");
+const EMBEDDED_WMI: &str = include_str!("../artifacts/core/windows_wmi.yaml");
+const EMBEDDED_SRUM: &str = include_str!("../artifacts/core/windows_srum.yaml");
+const EMBEDDED_WEB: &str = include_str!("../artifacts/core/windows_web.yaml");
 
 /// All embedded artifact YAML sources, in load order.
 static EMBEDDED_SOURCES: &[(&str, &str)] = &[
-    ("windows_eventlogs.yaml", EMBEDDED_EVENTLOGS),
-    ("windows_registry.yaml", EMBEDDED_REGISTRY),
-    ("windows_ntfs.yaml", EMBEDDED_NTFS),
-    ("windows_paging.yaml", EMBEDDED_PAGING),
-    ("windows_filesystem.yaml", EMBEDDED_FILESYSTEM),
-    ("windows_wmi.yaml", EMBEDDED_WMI),
-    ("windows_srum.yaml", EMBEDDED_SRUM),
-    ("windows_web.yaml", EMBEDDED_WEB),
+    ("core/windows_eventlogs.yaml", EMBEDDED_EVENTLOGS),
+    ("core/windows_registry.yaml", EMBEDDED_REGISTRY),
+    ("core/windows_ntfs.yaml", EMBEDDED_NTFS),
+    ("core/windows_filesystem.yaml", EMBEDDED_FILESYSTEM),
+    ("core/windows_wmi.yaml", EMBEDDED_WMI),
+    ("core/windows_srum.yaml", EMBEDDED_SRUM),
+    ("core/windows_web.yaml", EMBEDDED_WEB),
 ];
 
 // ── Core types ────────────────────────────────────────────────────────────────
@@ -60,7 +69,7 @@ pub enum CollectionMethod {
 pub struct ArtifactDefinition {
     /// Human-readable name, e.g. `"Security Event Log"`.
     pub name: String,
-    /// Grouping category, e.g. `"EventLogs"`, `"Registry"`, or `"Paging"`.
+    /// Grouping category, e.g. `"EventLogs"`, `"Registry"`, or `"NTFS"`.
     pub category: String,
     /// Target path — may contain `%VAR%` and glob wildcards.
     pub target_path: String,
@@ -407,6 +416,50 @@ mod tests {
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"SAM Registry Hive"));
         assert!(names.contains(&"Security Event Log"));
+    }
+
+    // ── Core / Custom split ───────────────────────────────────────────────────
+
+    /// Only `artifacts/core/` is embedded.  Categories that live under
+    /// `artifacts/custom/` must not leak into the Core Set.
+    #[test]
+    fn embedded_defs_exclude_custom_categories() {
+        let defs = load_embedded().unwrap();
+        for custom_category in ["Paging", "Mail", "AI Tools"] {
+            assert!(
+                !defs.iter().any(|d| d.category.eq_ignore_ascii_case(custom_category)),
+                "category '{custom_category}' is Custom and must not be embedded"
+            );
+        }
+
+        for custom_name in ["pagefile.sys", "Brave History", "Yandex History"] {
+            assert!(
+                !defs.iter().any(|d| d.name.eq_ignore_ascii_case(custom_name)),
+                "artifact '{custom_name}' is Custom and must not be embedded"
+            );
+        }
+    }
+
+    /// Every sample under `artifacts/custom/` must stay loadable as an
+    /// `ExternalConfig`, i.e. usable by copying it beside washi.exe as
+    /// `config.yaml`.
+    #[test]
+    fn custom_samples_parse_as_external_config() {
+        let samples: &[(&str, &str)] = &[
+            ("custom/paging.yaml", include_str!("../artifacts/custom/paging.yaml")),
+            ("custom/browsers-extra.yaml", include_str!("../artifacts/custom/browsers-extra.yaml")),
+            ("custom/ai-tools.yaml", include_str!("../artifacts/custom/ai-tools.yaml")),
+            ("custom/outlook.yaml", include_str!("../artifacts/custom/outlook.yaml")),
+        ];
+
+        for (name, src) in samples {
+            let parsed: ExternalConfig = serde_yaml::from_str(src)
+                .unwrap_or_else(|e| panic!("failed to parse '{name}': {e}"));
+            assert!(
+                !parsed.artifacts.is_empty(),
+                "'{name}' defines no artifacts"
+            );
+        }
     }
 
     // ── Filter: whitelist ─────────────────────────────────────────────────────

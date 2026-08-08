@@ -1,9 +1,12 @@
 # config.yaml — Washizukami (washi.exe) custom configuration
 #
 # Place this file in the same folder as washi.exe to have it loaded automatically.
-# If omitted, all built-in artifact definitions will be collected.
+# If omitted, the entire Core Set is collected.
 #
-# Priority: CLI flags > config.yaml > built-in defaults
+# Priority: CLI flags > config.yaml > Core Set (embedded)
+#
+# Everything in this file is optional and commented out by default, so shipping
+# it beside washi.exe does not change what is collected.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # Section 1: Filters
@@ -13,7 +16,7 @@
 #   If empty or omitted, all artifacts are collected.
 #   Matching is case-insensitive.
 #
-# Built-in artifact names:
+# Core Set artifact names:
 #   [EventLogs]
 #     - Security Event Log
 #     - System Event Log
@@ -30,10 +33,6 @@
 #     - $MFT
 #     - $SECURE:$SDS
 #     - $UsnJrnl:$J
-#   [Paging]
-#     - pagefile.sys
-#     - swapfile.sys
-#     - hiberfil.sys
 #   [Filesystem]
 #     - Prefetch Files
 #     - Recent LNK Files
@@ -58,9 +57,11 @@
 #   - "SOFTWARE Registry Hive"
 
 # disabled_categories — exclude entire categories from collection.
-#   Valid values: EventLogs / Registry / NTFS / Paging / Filesystem / WMI / SRUM / Web (case-insensitive)
-#   Evaluated after enabled_artifacts, so an artifact explicitly whitelisted will still
-#   be excluded if its category is disabled.
+#   Valid values: EventLogs / Registry / NTFS / Filesystem / WMI / SRUM / Web
+#   (case-insensitive), plus any category introduced by the artifacts section
+#   below.
+#   Evaluated after enabled_artifacts, so an artifact explicitly whitelisted will
+#   still be excluded if its category is disabled.
 
 # disabled_categories:
 #   - Filesystem
@@ -69,15 +70,17 @@
 # Section 2: Custom artifact definitions
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# artifacts — add artifacts not covered by the built-in definitions.
-#   If a custom entry shares the same name as a built-in one, the custom
+# artifacts — add artifacts that are not part of the Core Set.
+#   If a custom entry shares the same name as a Core one, the custom
 #   definition takes priority (override).
 #
 # Required fields per entry:
-#   name        : unique display name (referenced by --artifact and enabled_artifacts)
+#   name        : unique display name (referenced by enabled_artifacts)
 #   category    : group name (also used as the output subfolder name)
-#   target_path : path to collect. Supports %VAR% environment variables and glob wildcards (* and ?)
-#   method      : File (standard OS copy) or NTFS (direct MFT read, bypasses file locks)
+#   target_path : path to collect. Supports %VAR% environment variables and
+#                 glob wildcards (*, ?, **)
+#   method      : File (standard OS copy) or NTFS (direct MFT read, bypasses
+#                 file locks)
 
 # artifacts:
 #   - name: "My Application Log"
@@ -96,101 +99,21 @@
 #     method: File
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Example: Microsoft Outlook .pst files
+# Section 3: Ready-made Custom definitions
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Conditions: Japanese Windows + Classic Outlook (not New Outlook) + OneDrive enabled
+# The repository ships sample definitions under artifacts/custom/. Each file is
+# already shaped like this one, so you can either copy it here as config.yaml or
+# merge its `artifacts:` entries into the section above.
 #
-# When OneDrive is enabled, Classic Outlook stores .pst files under the
-# Japanese "Documents" folder name inside the OneDrive folder:
-#   C:\Users\<username>\OneDrive\ドキュメント\Outlook ファイル\*.pst
+#   artifacts/custom/paging.yaml          pagefile.sys / swapfile.sys / hiberfil.sys
+#   artifacts/custom/browsers-extra.yaml  Brave / Vivaldi / Opera / Yandex history
+#   artifacts/custom/ai-tools.yaml        Claude Code / Codex CLI local data
+#   artifacts/custom/outlook.yaml         Classic Outlook .pst files
 #
-# method: NTFS is recommended because Outlook locks .pst files while running.
-# Direct MFT access bypasses the lock and allows collection without closing Outlook.
+# See artifacts/README.md for what Core and Custom mean and why each definition
+# sits where it does.
 #
-# Note: .pst files can be several GB in size.
-#       Use --dry-run first to check file sizes before collecting.
-
-# artifacts:
-#   - name: "Outlook PST Files"
-#     category: "Mail"
-#     target_path: 'C:\Users\*\OneDrive\ドキュメント\Outlook ファイル\*.pst'
-#     method: NTFS
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Example: Claude Code local artifacts
-# ─────────────────────────────────────────────────────────────────────────────
+# Check what a definition would collect before running it for real:
 #
-# Claude Code stores conversation history, paste/image caches, and file-edit
-# snapshots under %USERPROFILE%\.claude\.
-#
-# method: NTFS is used because Claude Code may be running and holding file locks
-# during collection. Direct MFT access bypasses locks and ensures complete capture.
-#
-# history.jsonl  — full record of all prompt inputs entered by the user
-# paste-cache\*  — large text pastes (stored externally to keep history.jsonl compact)
-# image-cache\*  — large image pastes (same reason as paste-cache)
-# file-history\* — pre-edit snapshots of files modified by Claude Code
-
-artifacts:
-  - name: "Claude Code history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\history.jsonl'
-    method: NTFS
-
-  - name: "Claude Code paste-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\paste-cache\*'
-    method: NTFS
-
-  - name: "Claude Code image-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\image-cache\*'
-    method: NTFS
-
-  - name: "Claude Code file-history"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\file-history\*'
-    method: NTFS
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Example: Codex CLI local artifacts
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Codex CLI stores prompt history, session recordings, and attachments under
-# %USERPROFILE%\.codex\.
-#
-# method: NTFS is used because Codex CLI may be running and appending to these
-# files during collection (rollout logs are written continuously throughout a
-# session). Direct MFT access bypasses the lock and captures the file as-is.
-#
-# history.jsonl                — prompt history: prompt text, session ID, timestamp
-# sessions\**\rollout-*.jsonl  — detailed per-session event log: session metadata,
-#                                user/agent messages, reasoning, tool calls and their
-#                                results, task state, token usage, context compaction,
-#                                and errors. Codex writes these into a dated tree
-#                                (sessions\YYYY\MM\DD\), so `**` is required —
-#                                a fixed number of `*` levels would miss files.
-# attachments\**\*             — files attached to a Codex CLI session
-#
-# Deliberately NOT collected: credentials (auth.json), configuration
-# (config.toml), environment files, shell snapshots, SQLite databases, and
-# internal caches under %USERPROFILE%\.codex\.
-#
-# Glob note: a trailing bare `**` matches directories only, so the attachments
-# pattern spells out the `\*` tail to sweep every file in the subtree.
-
-  - name: "Codex CLI history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\history.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI session rollouts"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI attachments"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\attachments\**\*'
-    method: NTFS
+#   washi.exe --dry-run --category Paging

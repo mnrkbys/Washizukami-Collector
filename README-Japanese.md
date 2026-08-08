@@ -38,7 +38,7 @@ OS がファイルをロックしている状況下でも、NTFS の Master File
 | **NTFS Raw Read**        | MFT を直接解析し、OS のファイルロックをバイパスして収集                                                           |
 | **SHA-256 整合性検証**   | 収集したファイルをすべてハッシュ化し、改ざん検知を可能に                                                          |
 | **監査ログ**             | タイムスタンプ・収集方法・SHA-256 を含む構造化ログ (`collection.log`)                                             |
-| **単一バイナリ**         | アーティファクト定義をコンパイル時に内蔵 — 実行時に外部ファイル不要                                               |
+| **単一バイナリ**         | Core Set の定義をコンパイル時に内蔵 — 実行時に外部ファイル不要                                                    |
 | **柔軟なフィルタリング** | `--category` でカテゴリ単位のインクルード/エクスクルード（`!` プレフィックスで除外）、詳細は `config.yaml` で制御 |
 | **ZIP 出力**             | 収集完了後にすべての成果物を単一 ZIP に圧縮して搬出を容易に                                                       |
 | **メモリ取得連携**       | `--mem` オプションで [WinPmem](https://github.com/Velocidex/WinPmem) と連携してメモリダンプを取得                 |
@@ -70,7 +70,7 @@ OS がファイルをロックしている状況下でも、NTFS の Master File
 
 設定は不要です。右クリック →「**管理者として実行**」するだけで、デフォルト設定で収集が始まります。
 
-- **すべての内蔵アーティファクト**を収集
+- **Core Set 全体**を収集（[収集対象アーティファクト](#収集対象アーティファクト)を参照）
 - 出力先: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\`**（`%AllNtfsDrives%` 利用時、`washi.exe` と同じ階層に生成）
 - 監査ログ: **`HOSTNAME_ALL_YYYYMMDDHHMMSS\collection.log`**（SHA-256 ハッシュ付き）
 
@@ -93,7 +93,8 @@ Options:
   -c, --category <CATEGORY>        カテゴリでフィルタリング（複数指定可、大文字小文字不問）
                                    プレフィックスなし: 指定カテゴリのみ収集
                                    '!' プレフィックス: 指定カテゴリを除外
-                                   指定可能値: EventLogs, Registry, NTFS, Paging, Filesystem, WMI, SRUM, Web
+                                   指定可能値: EventLogs, Registry, NTFS, Filesystem, WMI, SRUM, Web
+                                   config.yaml で読み込んだ Custom 定義は独自のカテゴリを追加します。
       --dry-run                    パス解決結果のみ表示（ファイルは収集しない）
       --zip                        収集完了後に ZIP アーカイブを生成
       --mem                        tools\winpmem*.exe でメモリダンプを取得（収集前に実行）
@@ -215,7 +216,18 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 
 ## 収集対象アーティファクト
 
-内蔵定義でカバーしているアーティファクトの一覧です。`config.yaml` でカスタム定義を追加することも可能です（詳細は「アーティファクト定義のカスタマイズ」を参照）。
+アーティファクト定義は Core と Custom の2種類です。分類ルールの詳細は [`artifacts/README.md`](artifacts/README.md) を参照してください。
+
+| | Core | Custom |
+| --- | --- | --- |
+| 配置 | `artifacts/core/` | `artifacts/custom/` |
+| 配布 | `washi.exe` に内蔵 | 本リポジトリ内のサンプルファイル |
+| 収集 | 設定不要でデフォルト収集 | `config.yaml` で読み込んだ場合のみ |
+| 保守 | 継続的に検証・保守 | 現状のまま提供 |
+
+### Core Set
+
+デフォルトで収集されます。`washi.exe` をダブルクリックしたときに取得されるのがこの範囲です。
 
 | カテゴリ       | アーティファクト                                                                    | 収集方式   |
 | -------------- | ----------------------------------------------------------------------------------- | ---------- |
@@ -234,14 +246,29 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | **Web**        | Firefox 履歴・Cookie（places.sqlite / cookies.sqlite）                              | File       |
 | **Web**        | IE / Edge WebCache（WebCacheV01.dat）                                               | File       |
 | **Web**        | Edge 履歴                                                                           | File       |
-| **Web**        | Brave 履歴                                                                          | File       |
-| **Web**        | Vivaldi 履歴                                                                        | File       |
-| **Web**        | Opera 履歴                                                                          | File       |
-| **Web**        | Yandex Browser 履歴                                                                 | File       |
 
 > **NTFS + ADS:** Alternate Data Stream を MFT 直接読み取りで取得します。通常の API では読み出せないストリームにもアクセス可能です。
 
-> **全 NTFS ドライブ対応:** 内蔵 NTFS メタデータ定義は `%AllNtfsDrives%` を使用し、OS が認識している NTFS ドライブへ自動展開されます。非NTFSドライブは自動的にスキップされます。
+> **全 NTFS ドライブ対応:** Core の NTFS メタデータ定義は `%AllNtfsDrives%` を使用し、OS が認識している NTFS ドライブへ自動展開されます。非NTFSドライブは自動的にスキップされます。
+
+### Custom 定義
+
+デフォルトでは収集されません。`artifacts/custom/` 配下の各ファイルは `config.yaml` と同じ形式になっているため、`washi.exe` と同じフォルダにコピーして `config.yaml` にリネームするか、既存の `config.yaml` の `artifacts:` にマージして使用します。
+
+| ファイル | カテゴリ | アーティファクト | Core にしない理由 |
+| --- | --- | --- | --- |
+| `custom/paging.yaml` | `Paging` | `pagefile.sys` / `swapfile.sys` / `hiberfil.sys` | 搭載 RAM に比例したサイズになり、合計 20〜30GB に達することが多い。価値は高いが、ファストトリアージのデフォルトとしては成立しない |
+| `custom/browsers-extra.yaml` | `Web` | Brave / Vivaldi / Opera / Yandex の履歴 | Chromium 派生であり、意図的にインストールした環境にのみ存在する |
+| `custom/ai-tools.yaml` | `AI Tools` | Claude Code / Codex CLI のローカルデータ | ディスク上のレイアウトが各ツール自身のリリースサイクルで変化する。またプロンプト履歴はプライバシー影響が大きい |
+| `custom/outlook.yaml` | `Mail` | Classic Outlook の `.pst` ファイル | パスが Outlook のエディション・表示言語・OneDrive 設定によって変わる |
+
+```powershell
+# artifacts\custom\paging.yaml を washi.exe の隣に config.yaml としてコピーした後
+washi.exe --dry-run --category Paging   # 先にサイズを確認
+washi.exe --category Paging
+```
+
+> Custom 定義を読み込むまで、そのカテゴリは CLI にとって未知であり `--category` は拒否されます。
 
 ---
 
@@ -303,9 +330,9 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 
 ## アーティファクト定義のカスタマイズ
 
-内蔵定義は Windows イベントログ・レジストリハイブ・一般的なファイルシステムアーティファクトをカバーしています。`washi.exe` と同じフォルダに `config.yaml` を配置することで、収集対象の絞り込みや独自アーティファクトの追加ができます。
+Core Set は Windows イベントログ・レジストリハイブ・一般的なファイルシステムアーティファクトをカバーしています。`washi.exe` と同じフォルダに `config.yaml` を配置することで、収集対象の絞り込みや Custom アーティファクトの追加ができます。
 
-**優先順位:** CLI フラグ > `config.yaml` > 内蔵デフォルト
+**優先順位:** CLI フラグ > `config.yaml` > Core Set（内蔵）
 
 ### フィルタ
 
@@ -314,7 +341,7 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 収集するアーティファクト名のホワイトリストです。空または省略した場合はすべて収集されます。大文字小文字は区別しません。
 
 <details>
-<summary>内蔵アーティファクト名一覧</summary>
+<summary>Core Set アーティファクト名一覧</summary>
 
 | カテゴリ   | 名前                           |
 | ---------- | ------------------------------ |
@@ -331,9 +358,6 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | NTFS       | `$MFT`                         |
 | NTFS       | `$SECURE:$SDS`                 |
 | NTFS       | `$UsnJrnl:$J`                  |
-| Paging     | `pagefile.sys`                 |
-| Paging     | `swapfile.sys`                 |
-| Paging     | `hiberfil.sys`                 |
 | Filesystem | `Prefetch Files`               |
 | Filesystem | `Recent LNK Files`             |
 | WMI        | `WMI Repository OBJECTS.DATA`  |
@@ -345,22 +369,18 @@ washi.exe scan --rules C:\rules\malware.yar --output C:\scan_out
 | Web        | `Firefox cookies.sqlite`       |
 | Web        | `IE/Edge WebCacheV01.dat`      |
 | Web        | `Edge History`                 |
-| Web        | `Brave History`                |
-| Web        | `Vivaldi History`              |
-| Web        | `Opera History`                |
-| Web        | `Yandex History`               |
 
 </details>
 
 #### `disabled_categories`
 
-カテゴリ単位で除外します。有効な値: `EventLogs` / `Registry` / `NTFS` / `Paging` / `Filesystem` / `WMI` / `SRUM` / `Web`（大文字小文字不問）。
+カテゴリ単位で除外します。有効な値: `EventLogs` / `Registry` / `NTFS` / `Filesystem` / `WMI` / `SRUM` / `Web`（大文字小文字不問）。同じ `config.yaml` 内の Custom 定義が追加したカテゴリも指定できます。
 
 > **注意:** `disabled_categories` は `enabled_artifacts` より**後に**評価されます。ホワイトリストに明示したアーティファクトでも、カテゴリが無効化されていれば除外されます。
 
 ### カスタムアーティファクト定義
 
-`artifacts` キーで内蔵定義にないアーティファクトを追加できます。内蔵定義と同じ `name` を指定した場合はカスタム定義が優先されます。
+`artifacts` キーで Core Set にないアーティファクトを追加できます。Core と同じ `name` を指定した場合はカスタム定義が優先されます。
 
 必須フィールド:
 
@@ -404,107 +424,57 @@ artifacts:
     method: File
 ```
 
-### 応用例: Outlook .pst ファイルの収集
+### Custom 定義の読み込み
 
-Classic 版 Outlook（新しい Outlook アプリではなく旧来の Outlook）の `.pst` ファイルは、環境によって保存場所が異なります。**日本語 Windows かつ OneDrive 連携が有効な場合**、既定の保存先は以下のパスになります。
+[`artifacts/custom/`](artifacts/custom/) 配下の各ファイルは `config.yaml` と同じ形式になっています。使用するには、`washi.exe` と同じフォルダにコピーして `config.yaml` にリネームするか、既存の `config.yaml` の `artifacts:` にマージします。実際の収集前に必ず `--dry-run` で対象を確認してください。
+
+#### `custom/paging.yaml` — ページング／休止状態ファイル
+
+`pagefile.sys` と `hiberfil.sys` は搭載 RAM に比例したサイズになるため、16GB のホストでは合計 20〜30GB に達することが一般的です。プロセスメモリの断片（認証情報、復号済みペイロード、ネットワークバッファ）が残存している可能性があります。
+
+> **サイズに注意:** 必ず `--dry-run --category Paging` を先に実行してください。RAM 搭載量の多いホストでは、この3ファイルだけで収集先の空き容量を超えることがあります。
+>
+> `hiberfil.sys` は休止状態が無効（`powercfg /h off`）の場合、`swapfile.sys` はストアアプリを一度も起動していない場合には存在しません。
+
+#### `custom/browsers-extra.yaml` — Chromium 派生ブラウザ
+
+Brave / Vivaldi / Opera / Yandex。これらは `category: Web` を使用するため、Core のブラウザアーティファクトと一緒に収集され、同じ `Web\` 出力ツリーに配置されます。各 `History` は SQLite データベースで、Chrome と同じツールで解析できます。
+
+#### `custom/ai-tools.yaml` — Claude Code / Codex CLI
+
+[Claude Code](https://claude.ai/code) は `%USERPROFILE%\.claude\` 配下に、[Codex CLI](https://github.com/openai/codex) は `%USERPROFILE%\.codex\` 配下にローカルデータを保存します。
+
+| パス | 内容 |
+| ---- | ---- |
+| `.claude\history.jsonl` | ユーザーが入力したすべてのプロンプト履歴 |
+| `.claude\paste-cache\*` | `history.jsonl` を肥大化させないよう外部保存された大容量テキスト貼り付け |
+| `.claude\image-cache\*` | 大容量画像貼り付け（paste-cache と同じ理由） |
+| `.claude\file-history\*` | Claude Code がファイルを編集する前の事前スナップショット |
+| `.codex\history.jsonl` | プロンプト履歴（プロンプト本文・セッション ID・タイムスタンプ） |
+| `.codex\sessions\**\rollout-*.jsonl` | セッション単位の詳細イベントログ（セッションメタデータ、ユーザー／エージェントメッセージ、reasoning、ツール呼び出しと実行結果、タスク状態、トークン使用量、コンテキスト圧縮、エラー情報） |
+| `.codex\attachments\**\*` | Codex CLI セッションで使用された添付ファイル |
+
+すべて `method: NTFS` を使用します。収集時にこれらのツールが動作しファイルをロックしている可能性があるためです。特に Codex CLI はセッション中ロールアウトログに継続的に追記します。
+
+> **`**` を使う理由:** Codex はロールアウトログを日付ツリー（`sessions\YYYY\MM\DD\`）に書き出します。単一階層の `*` を固定個数並べた指定では取りこぼしが発生するため、再帰展開する `**` が必要です。なお、末尾が単独の `**` の場合はディレクトリのみに一致するため、配下のファイルをすべて収集するには `**\*` と記述します。
+>
+> **収集対象外:** 認証情報（`auth.json`）、設定（`config.toml`）、環境ファイル、shell snapshots、SQLite データベース、内部キャッシュは、これらの定義には意図的に含めていません。
+>
+> **`image-cache` について:** Claude Code で画像を貼り付けたことがない場合、`image-cache` ディレクトリは存在しないため dry-run では `⚠ NO MATCH` と表示されます。これは正常な動作です。
+
+#### `custom/outlook.yaml` — Classic 版 Outlook `.pst` ファイル
+
+Classic 版 Outlook（新しい Outlook アプリではなく旧来の Outlook）の `.pst` ファイルは、Outlook のエディション・Windows の表示言語・OneDrive 設定によって保存場所が異なります。同梱の定義は**日本語 Windows かつ OneDrive 連携が有効な場合**を対象としています。
 
 ```
 C:\Users\<ユーザー名>\OneDrive\ドキュメント\Outlook ファイル\*.pst
 ```
 
-全ユーザー分をまとめて収集するには、`config.yaml` に以下を追加します。
-
-```yaml
-artifacts:
-  - name: "Outlook PST Files"
-    category: "Mail"
-    target_path: "C:\\Users\\*\\OneDrive\\ドキュメント\\Outlook ファイル\\*.pst"
-    method: NTFS
-```
+他のレイアウトでは `target_path` を調整し、`--dry-run` で確認してから使用してください。
 
 > **`method: NTFS` を使う理由:** Classic 版 Outlook は起動中に `.pst` ファイルを排他ロックします。NTFS Raw Read を使うことでロックをバイパスし、Outlook を終了させることなく収集できます。
 >
 > **サイズに注意:** `.pst` ファイルは数 GB になる場合があります。収集前に `--dry-run` でファイルサイズを確認することをお勧めします。
-
-### 応用例: Claude Code ローカルアーティファクトの収集
-
-[Claude Code](https://claude.ai/code) はローカルデータを `%USERPROFILE%\.claude\` 配下に保存します。Claude Code の実行中はこれらのファイルがロックされている可能性があるため、NTFS Raw Read による収集が適切です。
-
-| パス | 内容 |
-| ---- | ---- |
-| `%USERPROFILE%\.claude\history.jsonl` | ユーザーが入力したすべてのプロンプト履歴 |
-| `%USERPROFILE%\.claude\paste-cache\*` | `history.jsonl` を肥大化させないよう外部保存された大容量テキスト貼り付け |
-| `%USERPROFILE%\.claude\image-cache\*` | 大容量画像貼り付け（paste-cache と同じ理由） |
-| `%USERPROFILE%\.claude\file-history\*` | Claude Code がファイルを編集する前の事前スナップショット |
-
-`config.yaml` に以下を追加することで収集できます。
-
-```yaml
-artifacts:
-  - name: "Claude Code history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\history.jsonl'
-    method: NTFS
-
-  - name: "Claude Code paste-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\paste-cache\*'
-    method: NTFS
-
-  - name: "Claude Code image-cache"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\image-cache\*'
-    method: NTFS
-
-  - name: "Claude Code file-history"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.claude\file-history\*'
-    method: NTFS
-```
-
-これらの定義を含む `config.yaml` がこのリポジトリに同梱されています。
-
-収集前に対象を確認するには:
-
-```powershell
-washi.exe --category "AI Tools" --dry-run
-```
-
-> **`image-cache` について:** Claude Code で画像を貼り付けたことがない場合、`image-cache` ディレクトリは存在しないため dry-run では `⚠ NO MATCH` と表示されます。これは正常な動作です。
-
-### 応用例: Codex CLI ローカルアーティファクトの収集
-
-[Codex CLI](https://github.com/openai/codex) はローカルデータを `%USERPROFILE%\.codex\` 配下に保存します。ロールアウトログはセッション中に継続的に追記されるため、こちらも NTFS Raw Read による収集が適切です。
-
-| パス | 内容 |
-| ---- | ---- |
-| `%USERPROFILE%\.codex\history.jsonl` | プロンプト履歴（プロンプト本文・セッション ID・タイムスタンプ） |
-| `%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl` | セッション単位の詳細イベントログ（セッションメタデータ、ユーザー／エージェントメッセージ、reasoning、ツール呼び出しと実行結果、タスク状態、トークン使用量、コンテキスト圧縮、エラー情報） |
-| `%USERPROFILE%\.codex\attachments\**\*` | Codex CLI セッションで使用された添付ファイル |
-
-`config.yaml` に以下を追加することで収集できます。
-
-```yaml
-artifacts:
-  - name: "Codex CLI history.jsonl"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\history.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI session rollouts"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\sessions\**\rollout-*.jsonl'
-    method: NTFS
-
-  - name: "Codex CLI attachments"
-    category: "AI Tools"
-    target_path: '%USERPROFILE%\.codex\attachments\**\*'
-    method: NTFS
-```
-
-> **`**` を使う理由:** Codex はロールアウトログを日付ツリー（`sessions\YYYY\MM\DD\`）に書き出します。単一階層の `*` を固定個数並べた指定では取りこぼしが発生するため、再帰展開する `**` が必要です。なお、末尾が単独の `**` の場合はディレクトリのみに一致するため、配下のファイルをすべて収集するには `**\*` と記述します。
->
-> **収集対象外:** 認証情報（`auth.json`）、設定（`config.toml`）、環境ファイル、shell snapshots、SQLite データベース、内部キャッシュは、これらの定義には意図的に含めていません。
 
 ---
 
@@ -556,13 +526,13 @@ cargo build --release
 
 ### メールクライアントアーティファクト
 
-#### Microsoft Outlook `.pst` — config.yaml で今すぐ対応可能
+#### Microsoft Outlook `.pst` — Custom 定義として対応済み
 
-Classic 版 Outlook の `.pst` 収集は、カスタムアーティファクト定義を使って現在のバージョンでも対応できます。設定方法は「[応用例: Outlook .pst ファイルの収集](#応用例-outlook-pst-ファイルの収集)」を参照してください。
+Classic 版 Outlook の `.pst` 収集は [`artifacts/custom/outlook.yaml`](artifacts/custom/outlook.yaml) で現在のバージョンでも対応できます。詳細は「[`custom/outlook.yaml` — Classic 版 Outlook `.pst` ファイル](#customoutlookyaml--classic-版-outlook-pst-ファイル)」を参照してください。
 
-#### 内蔵定義への追加（予定）
+#### Custom 定義の追加（予定）
 
-以下は今後の内蔵定義追加として検討中です。
+以下は今後の Custom 定義追加として検討中です。
 
 | クライアント            | 対象ファイル                                                  |
 | ----------------------- | ------------------------------------------------------------- |
