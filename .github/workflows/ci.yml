@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# A new push to the same PR supersedes the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Test and build (x86_64-pc-windows-gnu)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The GNU toolchain is required, not merely preferred: build.rs compiles
+      # the icon resource with windres and hands the resulting COFF object to
+      # the linker via cargo:rustc-link-arg, which the MSVC linker will not
+      # accept. This mirrors the setup in release.yml.
+      - name: Install Rust toolchain (GNU)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-gnu
+          targets: x86_64-pc-windows-gnu
+
+      - name: Install MSYS2 / MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+
+      - name: Add MinGW-w64 to PATH
+        run: echo "C:/msys64/mingw64/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: cargo test
+        env:
+          DLLTOOL: C:/msys64/mingw64/bin/dlltool.exe
+          CARGO_TARGET_DIR: target
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc
+        run: cargo test --target x86_64-pc-windows-gnu
+
+      - name: cargo build --release
+        env:
+          DLLTOOL: C:/msys64/mingw64/bin/dlltool.exe
+          CARGO_TARGET_DIR: target
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc
+        run: cargo build --release --target x86_64-pc-windows-gnu
+
+# Not gated yet — both fail against the current tree, and fixing them means
+# touching source, which is out of scope for introducing CI. A check that is
+# red from day one teaches people to ignore CI, so each needs its own PR first:
+#
+#   cargo fmt --check   1002 lines of diff. The codebase is deliberately
+#                       hand-aligned in places (e.g. `let rc_path   = ...` in
+#                       build.rs), so enabling this means accepting a
+#                       whole-tree reformat. Run `cargo fmt`, review, merge,
+#                       then add the step here.
+#
+#   cargo clippy        9 warnings, all trivial: 4x collapsible_if,
+#                       3x useless_format, 1x too_many_arguments (8/7),
+#                       1x upper_case_acronyms (NTFS). Small enough to fix in
+#                       one pass, after which `cargo clippy -- -D warnings`
+#                       can be added as a gate.
+#
+# `--locked` would now pass — Cargo.lock was brought back in sync with
+# Cargo.toml in #14 — but whether to enforce it is a separate decision about
+# how strictly the lock should bind CI, so it is left out of this PR too.
