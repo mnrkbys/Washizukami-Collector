@@ -336,6 +336,59 @@ mod tests {
         assert_eq!(result, input);
     }
 
+    // ── Literal '%' and '$' in artifact target paths ──────────────────────────
+    //
+    // Event log channel names encode '/' as '%4', and NTFS metadata files begin
+    // with '$'.  Both collide with the environment-variable syntax, so these
+    // tests pin the behaviour the Core definitions rely on.
+
+    /// `Microsoft-Windows-PowerShell%4Operational.evtx` must survive expansion
+    /// of the `%SystemRoot%` that precedes it.  The trailing `%` is unpaired,
+    /// so the `%VAR%` scanner must leave it alone rather than consuming it.
+    #[test]
+    fn percent4_in_evtx_filename_survives_env_expansion() {
+        unsafe { std::env::set_var("TEST_CDIR_WINROOT", "C:\\Windows") };
+        let result = expand_env_vars(
+            "%TEST_CDIR_WINROOT%\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx",
+        );
+        assert_eq!(
+            result,
+            "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx"
+        );
+    }
+
+    /// A channel filename containing a space as well as `%4`
+    /// (`Microsoft-Windows-Windows Defender%4Operational.evtx`).
+    #[test]
+    fn percent4_with_space_in_channel_name_is_preserved() {
+        let input = "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Windows Defender%4Operational.evtx";
+        assert_eq!(expand_env_vars(input), input);
+    }
+
+    /// `$MFT`, `$Secure` and `$Extend\$UsnJrnl` must not be eaten by the
+    /// `$VAR` scanner.  They survive because no environment variable of that
+    /// name exists, and an unresolvable `$NAME` is emitted verbatim.
+    #[test]
+    fn ntfs_metadata_dollar_names_are_preserved() {
+        for input in [
+            "C:\\$MFT",
+            "C:\\$Secure",
+            "C:\\$Extend\\$UsnJrnl",
+            "C:\\$Extend\\$RmMetadata\\$TxfLog",
+        ] {
+            assert_eq!(expand_env_vars(input), input, "mangled: {input}");
+        }
+    }
+
+    /// The Recycle Bin metadata pattern mixes `%VAR%` expansion with two
+    /// literal `$` names (`$Recycle.Bin` and the `$I*` glob).
+    #[test]
+    fn recycle_bin_metadata_pattern_is_preserved() {
+        unsafe { std::env::set_var("TEST_CDIR_SYSDRIVE", "C:") };
+        let result = expand_env_vars("%TEST_CDIR_SYSDRIVE%\\$Recycle.Bin\\*\\$I*");
+        assert_eq!(result, "C:\\$Recycle.Bin\\*\\$I*");
+    }
+
     #[test]
     fn no_glob_returns_single_path() {
         let paths = resolve_path("C:\\Windows\\System32\\notepad.exe").unwrap();
