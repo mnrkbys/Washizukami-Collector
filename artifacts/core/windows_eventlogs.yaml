@@ -1,3 +1,22 @@
+# Core Set — Windows event logs
+#
+# All entries use method: NTFS. The Event Log service holds every .evtx open
+# with a share mode that denies reads, so a standard copy always fails; raw MFT
+# access is the only way to take them from a live host.
+#
+# Channel filenames encode the '/' in the channel name as '%4' — for example
+# the channel Microsoft-Windows-PowerShell/Operational is stored on disk as
+# Microsoft-Windows-PowerShell%4Operational.evtx. That '%' is left intact by
+# path_resolver::expand_env_vars (see the percent4_* regression tests).
+#
+# Some channels below are legitimately absent on a given host: TaskScheduler
+# Operational is disabled by default in Windows, and Sysmon is only present
+# where it has been deployed. An artifact that resolves to nothing is reported
+# as SKIP rather than FAIL, so listing them costs nothing on hosts that lack
+# them and avoids silently losing them on hosts that have them.
+
+# ── Core three ────────────────────────────────────────────────────────────────
+
 - name: Security Event Log
   category: EventLogs
   target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Security.evtx"
@@ -11,4 +30,63 @@
 - name: Application Event Log
   category: EventLogs
   target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Application.evtx"
+  method: NTFS
+
+# ── PowerShell execution ──────────────────────────────────────────────────────
+# Script block logging (4104) and module logging land in the Operational
+# channel; the legacy "Windows PowerShell" channel carries engine lifecycle
+# and pipeline execution details (400/403/600) and is enabled by default.
+
+- name: PowerShell Operational Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx"
+  method: NTFS
+
+- name: Windows PowerShell Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Windows PowerShell.evtx"
+  method: NTFS
+
+# ── Remote access ─────────────────────────────────────────────────────────────
+# LocalSessionManager records logon/logoff and reconnect per session (21/22/25);
+# RemoteConnectionManager records the incoming connection and the source
+# address (1149). Together they identify where an RDP intrusion came from.
+
+- name: TerminalServices LocalSessionManager Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx"
+  method: NTFS
+
+- name: TerminalServices RemoteConnectionManager Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-RemoteConnectionManager%4Operational.evtx"
+  method: NTFS
+
+- name: WinRM Operational Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-WinRM%4Operational.evtx"
+  method: NTFS
+
+# ── Persistence and detection ─────────────────────────────────────────────────
+# TaskScheduler Operational is DISABLED BY DEFAULT in Windows, so the file is
+# frequently absent. It is listed because when it has been enabled it records
+# task registration and execution, which nothing else covers.
+
+- name: TaskScheduler Operational Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-TaskScheduler%4Operational.evtx"
+  method: NTFS
+
+- name: Windows Defender Operational Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-Windows Defender%4Operational.evtx"
+  method: NTFS
+
+# Sysmon is not a Windows component; this channel exists only where Sysmon has
+# been deployed. Where it does exist it is the highest-value log on the host,
+# and its absence is an ordinary SKIP.
+
+- name: Sysmon Operational Log
+  category: EventLogs
+  target_path: "%SystemRoot%\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx"
   method: NTFS

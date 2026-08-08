@@ -1,24 +1,56 @@
+# Core Set — browser artifacts
+#
+# Core browsers are Edge, Chrome, Firefox and the IE/Edge WebCache. Chromium
+# derivatives (Brave, Vivaldi, Opera, Yandex) are Custom — see
+# artifacts/custom/browsers-extra.yaml.
+#
+# Collection method
+# -----------------
+# Chromium and Firefox open their SQLite databases with a share mode that
+# permits reading, so method: File succeeds even while the browser is running,
+# and it reads through the cache manager — which sees writes that have not yet
+# been flushed to disk. Raw NTFS access would bypass that and can return a
+# staler copy. Where a file does turn out to be locked, collect_artifact falls
+# back to raw NTFS access automatically, so File is safe in both cases.
+#
+# WebCacheV01.dat is the exception: it is held open by a system service with a
+# deny-read share mode and a standard copy always fails, so it is declared
+# NTFS directly rather than relying on the fallback.
+#
+# Profiles
+# --------
+# Chromium stores each profile in its own directory under `User Data`
+# (Default, Profile 1, Profile 2, …, Guest Profile). Matching only `Default`
+# misses every additional profile — on the host these definitions were verified
+# against, 9 of 10 Chrome profiles containing history would have been missed.
+# `User Data\*\History*` matches every profile directory and nothing else,
+# because only profile directories contain a file whose name starts with
+# "History".
+#
+# The trailing '*' also picks up the SQLite side file (History-journal), which
+# is required for the copied database to be consistent.
+
 - name: Chrome History
   category: Web
-  target_path: "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History"
+  target_path: "C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\*\\History*"
+  method: File
+
+- name: Edge History
+  category: Web
+  target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\*\\History*"
   method: File
 
 - name: Firefox places.sqlite
   category: Web
-  target_path: "C:\\Users\\*\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\*\\places.sqlite"
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\*\\places.sqlite*"
   method: File
 
 - name: Firefox cookies.sqlite
   category: Web
-  target_path: "C:\\Users\\*\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\*\\cookies.sqlite"
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\*\\cookies.sqlite*"
   method: File
 
 - name: "IE/Edge WebCacheV01.dat"
   category: Web
   target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Windows\\WebCache\\WebCacheV01.dat"
-  method: File
-
-- name: Edge History
-  category: Web
-  target_path: "C:\\Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History"
-  method: File
+  method: NTFS

@@ -1,3 +1,10 @@
+# Core Set — filesystem artifacts
+#
+# All entries use method: File. None of these are held open with a deny-read
+# share mode, so a standard copy succeeds; where an individual file does turn
+# out to be locked or ACL-restricted, the collector falls back to raw NTFS
+# access automatically (see collect_artifact in src/collector.rs).
+
 - name: Prefetch Files
   category: Filesystem
   target_path: "%SystemRoot%\\Prefetch\\*.pf"
@@ -6,4 +13,79 @@
 - name: Recent LNK Files
   category: Filesystem
   target_path: "C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\*.lnk"
+  method: File
+
+# ── Program execution and file access ─────────────────────────────────────────
+# Jump Lists record which files each application opened and when. Automatic
+# lists are maintained by the shell; Custom lists are written by the
+# application itself. Both are small — a few MB per profile.
+
+- name: Jump Lists (Automatic)
+  category: Filesystem
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations\\*"
+  method: File
+
+- name: Jump Lists (Custom)
+  category: Filesystem
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\*"
+  method: File
+
+# ActivitiesCache.db records application focus and usage with timestamps. The
+# Timeline UI was removed in Windows 11, but the database is still written, so
+# it remains useful on both 10 and 11 — richer on 10. The trailing '*' picks up
+# the -wal and -shm companions, without which recent activity may be missing
+# from the copied database.
+
+- name: Windows Timeline ActivitiesCache
+  category: Filesystem
+  target_path: "C:\\Users\\*\\AppData\\Local\\ConnectedDevicesPlatform\\*\\ActivitiesCache.db*"
+  method: File
+
+# Commands typed at an interactive PowerShell prompt, persisted by PSReadLine
+# across sessions. Typically tens of KB, and frequently contains the attacker's
+# own commands verbatim.
+
+- name: PowerShell Console History
+  category: Filesystem
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadline\\ConsoleHost_history.txt"
+  method: File
+
+# ── Persistence ───────────────────────────────────────────────────────────────
+# Task definition XML, including the command line and trigger of every
+# scheduled task. Complements the TaskScheduler Operational event log, which is
+# disabled by default and therefore often absent.
+
+- name: Scheduled Task Definitions
+  category: Filesystem
+  target_path: "%SystemRoot%\\System32\\Tasks\\**\\*"
+  method: File
+
+# Both Startup folders are collected. The per-user folder runs at that user's
+# logon; the All Users folder runs at every user's logon and requires
+# administrative rights to write to, so an unexpected entry there is the more
+# significant of the two.
+
+- name: User Startup Folder
+  category: Filesystem
+  target_path: "C:\\Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\*"
+  method: File
+
+- name: All Users Startup Folder
+  category: Filesystem
+  target_path: "%ProgramData%\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\*"
+  method: File
+
+# ── Deletion ──────────────────────────────────────────────────────────────────
+# Only the $I metadata files are collected: each is ~544 bytes and records the
+# original path, size and deletion timestamp of one deleted item, which is what
+# a triage timeline needs.
+#
+# The $R files — the deleted content itself — are deliberately NOT collected.
+# They are unbounded in size (525 MB across 88 items on the host this
+# definition was verified against, against ~50 KB for all 92 $I files) and
+# recovering deleted file content is a targeted follow-up, not fast triage.
+
+- name: Recycle Bin Metadata
+  category: Filesystem
+  target_path: "%SystemDrive%\\$Recycle.Bin\\*\\$I*"
   method: File
