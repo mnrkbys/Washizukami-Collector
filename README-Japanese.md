@@ -29,6 +29,14 @@ OS がファイルをロックしている状況下でも、NTFS の Master File
 - [Velociraptor](https://github.com/Velocidex/velociraptor) / [KAPE](https://www.kroll.com/en/services/cyber-risk/incident-response-litigation-support/kroll-artifact-parser-extractor-kape) などのフォレンジックフレームワーク
 - ELK Stack / Splunk などの SIEM への取り込み
 
+### プロジェクトの方針
+
+> **Keep it simple. Keep it reliable.**
+
+Washizukami は多機能な DFIR プラットフォームを目指しません。Windows インシデントの初動における証拠収集という一点に集中し、解析はそのための専用ツールに委ねます。デフォルトの挙動をむやみに増やさず、緊迫した現場でも間違えずに使える範囲にコマンドラインを保ちます。
+
+そうして抑えた複雑さは、もう一方の「信頼できること」に振り向けます。収集の確実性・再現性・保守性を優先し、デフォルトで収集するアーティファクトは継続的に検証し続けられるものだけに絞っています。定義数を意図的に抑えているのはそのためです。
+
 ---
 
 ## 機能
@@ -569,10 +577,12 @@ Classic 版 Outlook の `.pst` 収集は [`artifacts/custom/outlook.yaml`](artif
 
 ## AI-Assisted Development（AI による開発支援）
 
-本プロジェクトは、**Claude Code** および **Google Gemini** という 2 つの強力な AI アシスタントの支援を受けて開発されました。
+本プロジェクトの設計判断・レビュー・最終的な意思決定は、いずれもメンテナが行っています。AI アシスタントは開発支援のツールとして利用しており、本セクションはその透明性のための記載です。
 
-- **Claude Code**: 主に Rust のコード構造の設計、リファクタリング、および Windows 特有のシステムプログラミングの実装支援。
-- **Google Gemini**: プロジェクトの全体的なロードマップ策定、ドキュメントの整備、およびトラブルシューティングの壁打ち相手。
+- **Claude Code** — リポジトリ上の実装作業。Rust コードの変更、リファクタリング、テスト、Git / GitHub の操作。
+- **ChatGPT** — ロードマップの検討、アーキテクチャ・設計の議論、批判的レビュー、タスク分解、リリース計画、設計方針とプロジェクトの方向性の整理。
+
+すべての変更は、取り込む前にメンテナがレビューし承認しています。
 
 ---
 
