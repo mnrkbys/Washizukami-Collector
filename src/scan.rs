@@ -272,10 +272,10 @@ fn collect_tasks_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
             // Task Scheduler XML files are UTF-16 LE with BOM (0xFF 0xFE).
             // read_to_string() assumes UTF-8 and silently fails on them,
             // so read raw bytes and decode manually.
-            if let Ok(bytes) = std::fs::read(&path) {
-                if let Some(content) = decode_task_xml(&bytes) {
-                    extract_commands_from_xml(&content, out);
-                }
+            if let Ok(bytes) = std::fs::read(&path)
+                && let Some(content) = decode_task_xml(&bytes)
+            {
+                extract_commands_from_xml(&content, out);
             }
         }
     }
