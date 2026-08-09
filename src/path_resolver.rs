@@ -82,7 +82,10 @@ pub fn expand_env_vars(path: &str) -> String {
     let bytes = result.as_bytes();
     let mut out = String::with_capacity(result.len());
     while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_') {
+        if bytes[i] == b'$'
+            && i + 1 < bytes.len()
+            && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_')
+        {
             // Already handled ${} above; skip if followed by `{`
             if bytes[i + 1] == b'{' {
                 out.push(bytes[i] as char);
@@ -393,7 +396,10 @@ mod tests {
     fn no_glob_returns_single_path() {
         let paths = resolve_path("C:\\Windows\\System32\\notepad.exe").unwrap();
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0], std::path::PathBuf::from("C:\\Windows\\System32\\notepad.exe"));
+        assert_eq!(
+            paths[0],
+            std::path::PathBuf::from("C:\\Windows\\System32\\notepad.exe")
+        );
     }
 
     #[test]
@@ -410,7 +416,11 @@ mod tests {
 
         assert_eq!(paths.len(), 2, "expected 2 .txt files");
         for p in &paths {
-            assert!(p.exists(), "glob returned non-existent path: {}", p.display());
+            assert!(
+                p.exists(),
+                "glob returned non-existent path: {}",
+                p.display()
+            );
         }
 
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -436,9 +446,21 @@ mod tests {
         let mut paths = resolve_path(&pattern).unwrap();
         paths.sort();
 
-        assert_eq!(paths.len(), 2, "should match exactly Alice and Bob, not the root-level file");
-        assert!(paths.iter().any(|p| p.ends_with("Alice\\NTUSER.DAT") || p.ends_with("Alice/NTUSER.DAT")));
-        assert!(paths.iter().any(|p| p.ends_with("Bob\\NTUSER.DAT") || p.ends_with("Bob/NTUSER.DAT")));
+        assert_eq!(
+            paths.len(),
+            2,
+            "should match exactly Alice and Bob, not the root-level file"
+        );
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("Alice\\NTUSER.DAT") || p.ends_with("Alice/NTUSER.DAT"))
+        );
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with("Bob\\NTUSER.DAT") || p.ends_with("Bob/NTUSER.DAT"))
+        );
 
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -498,11 +520,12 @@ mod tests {
             "`**` should match at any depth, got: {:?}",
             paths
         );
-        assert!(paths.iter().all(|p| p
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with("rollout-")));
+        assert!(paths.iter().all(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("rollout-")
+        }));
 
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -528,7 +551,12 @@ mod tests {
         let pattern = format!("{}\\**\\*", tmp.to_string_lossy());
         let paths = resolve_path(&pattern).unwrap();
 
-        assert_eq!(paths.len(), 2, "expected exactly the 2 files, got: {:?}", paths);
+        assert_eq!(
+            paths.len(),
+            2,
+            "expected exactly the 2 files, got: {:?}",
+            paths
+        );
         assert!(
             paths.iter().all(|p| p.is_file()),
             "directories must be filtered out: {:?}",
@@ -553,7 +581,12 @@ mod tests {
         let pattern = format!("{}\\*", tmp.to_string_lossy());
         let paths = resolve_path(&pattern).unwrap();
 
-        assert_eq!(paths.len(), 1, "only the file should be returned: {:?}", paths);
+        assert_eq!(
+            paths.len(),
+            1,
+            "only the file should be returned: {:?}",
+            paths
+        );
         assert!(paths[0].ends_with("file.txt"));
 
         std::fs::remove_dir_all(&tmp).unwrap();

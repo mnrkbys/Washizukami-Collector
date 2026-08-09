@@ -23,7 +23,7 @@
 //! definitions before filtering.  If a custom entry shares a `name` with an
 //! embedded entry the custom definition takes precedence.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -251,7 +251,10 @@ pub fn load_artifacts(
 
     // Merge custom definitions: override by name, then append new ones.
     for custom in custom_defs {
-        if let Some(existing) = defs.iter_mut().find(|d| d.name.eq_ignore_ascii_case(&custom.name)) {
+        if let Some(existing) = defs
+            .iter_mut()
+            .find(|d| d.name.eq_ignore_ascii_case(&custom.name))
+        {
             *existing = custom;
         } else {
             defs.push(custom);
@@ -407,7 +410,10 @@ mod tests {
     #[test]
     fn embedded_defs_are_non_empty() {
         let defs = load_embedded().unwrap();
-        assert!(!defs.is_empty(), "embedded YAML sources should contain definitions");
+        assert!(
+            !defs.is_empty(),
+            "embedded YAML sources should contain definitions"
+        );
     }
 
     #[test]
@@ -427,14 +433,18 @@ mod tests {
         let defs = load_embedded().unwrap();
         for custom_category in ["Paging", "Mail", "AI Tools"] {
             assert!(
-                !defs.iter().any(|d| d.category.eq_ignore_ascii_case(custom_category)),
+                !defs
+                    .iter()
+                    .any(|d| d.category.eq_ignore_ascii_case(custom_category)),
                 "category '{custom_category}' is Custom and must not be embedded"
             );
         }
 
         for custom_name in ["pagefile.sys", "Brave History", "Yandex History"] {
             assert!(
-                !defs.iter().any(|d| d.name.eq_ignore_ascii_case(custom_name)),
+                !defs
+                    .iter()
+                    .any(|d| d.name.eq_ignore_ascii_case(custom_name)),
                 "artifact '{custom_name}' is Custom and must not be embedded"
             );
         }
@@ -446,10 +456,22 @@ mod tests {
     #[test]
     fn custom_samples_parse_as_external_config() {
         let samples: &[(&str, &str)] = &[
-            ("custom/paging.yaml", include_str!("../artifacts/custom/paging.yaml")),
-            ("custom/browsers-extra.yaml", include_str!("../artifacts/custom/browsers-extra.yaml")),
-            ("custom/ai-tools.yaml", include_str!("../artifacts/custom/ai-tools.yaml")),
-            ("custom/outlook.yaml", include_str!("../artifacts/custom/outlook.yaml")),
+            (
+                "custom/paging.yaml",
+                include_str!("../artifacts/custom/paging.yaml"),
+            ),
+            (
+                "custom/browsers-extra.yaml",
+                include_str!("../artifacts/custom/browsers-extra.yaml"),
+            ),
+            (
+                "custom/ai-tools.yaml",
+                include_str!("../artifacts/custom/ai-tools.yaml"),
+            ),
+            (
+                "custom/outlook.yaml",
+                include_str!("../artifacts/custom/outlook.yaml"),
+            ),
         ];
 
         for (name, src) in samples {
@@ -542,7 +564,10 @@ mod tests {
             ..Default::default()
         };
         let result = apply_filter(defs, &filter);
-        assert!(result.is_empty(), "disabled category should override enabled_artifacts");
+        assert!(
+            result.is_empty(),
+            "disabled category should override enabled_artifacts"
+        );
     }
 
     // ── merge_override ────────────────────────────────────────────────────────

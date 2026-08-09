@@ -12,7 +12,7 @@ mod vss;
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{Parser, Subcommand};
-use collector::{collect_artifact, CollectionStatus, RawCollector};
+use collector::{CollectionStatus, RawCollector, collect_artifact};
 use config::CollectionFilter;
 use ntfs_reader::NtfsReader;
 use std::collections::HashSet;
@@ -153,8 +153,17 @@ fn run(no_args: bool) -> Result<()> {
     };
 
     // ── Subcommand dispatch ───────────────────────────────────────────────────
-    if let Some(Commands::Scan { yara_path, rules, output }) = cli.command {
-        scan::run_scan(scan::ScanArgs { yara_path, rules, output });
+    if let Some(Commands::Scan {
+        yara_path,
+        rules,
+        output,
+    }) = cli.command
+    {
+        scan::run_scan(scan::ScanArgs {
+            yara_path,
+            rules,
+            output,
+        });
         return Ok(());
     }
 
@@ -172,8 +181,10 @@ fn run(no_args: bool) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("."));
 
     // ── Build CLI filter ─────────────────────────────────────────────────────
-    let (include_cats, exclude_cats): (Vec<String>, Vec<String>) =
-        cli.categories.into_iter().partition(|c| !c.starts_with('!'));
+    let (include_cats, exclude_cats): (Vec<String>, Vec<String>) = cli
+        .categories
+        .into_iter()
+        .partition(|c| !c.starts_with('!'));
     let exclude_cats: Vec<String> = exclude_cats
         .into_iter()
         .map(|c| c.trim_start_matches('!').to_owned())
@@ -255,8 +266,7 @@ fn run(no_args: bool) -> Result<()> {
 
     // ── Memory dump (winpmem) — runs before artifact collection ───────────────
     if cli.mem {
-        exttools::run_winpmem(&exe_dir, &output_base, &mut audit)
-            .context("memory dump failed")?;
+        exttools::run_winpmem(&exe_dir, &output_base, &mut audit).context("memory dump failed")?;
     }
 
     // ── Collection loop ──────────────────────────────────────────────────────
@@ -297,7 +307,8 @@ fn run(no_args: bool) -> Result<()> {
             ui::print_collecting(&def.category);
         }
 
-        let target_paths = expand_target_paths(&def.target_path, cli.volume, drive_discovery.as_ref());
+        let target_paths =
+            expand_target_paths(&def.target_path, cli.volume, drive_discovery.as_ref());
         if target_paths.is_empty() {
             if cli.verbose {
                 ui::print_skip(
@@ -313,32 +324,32 @@ fn run(no_args: bool) -> Result<()> {
         }
 
         for target_path in target_paths {
-            let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(
-                &target_path,
-                cli.vss,
-            ) {
-                Ok(value) => value,
-                Err(e) => {
-                    if cli.verbose {
-                        ui::print_warn(&format!(
+            let (resolved, pattern_count, expanded_target_path) =
+                match resolve_source_paths_with_patterns(&target_path, cli.vss) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        if cli.verbose {
+                            ui::print_warn(&format!(
+                                "path resolution failed for '{}': {:#}",
+                                def.name, e
+                            ));
+                        }
+                        audit.log_warn(&format!(
                             "path resolution failed for '{}': {:#}",
                             def.name, e
                         ));
+                        n_fail += 1;
+                        if seen_failed.insert(def.category.clone()) {
+                            failed_cats.push(def.category.clone());
+                        }
+                        continue;
                     }
-                    audit.log_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                    n_fail += 1;
-                    if seen_failed.insert(def.category.clone()) {
-                        failed_cats.push(def.category.clone());
-                    }
-                    continue;
-                }
-            };
+                };
 
             if cli.vss {
                 let msg = format!(
                     "VSS enabled: '{}' expanded to {} pattern(s) [all snapshots + live]",
-                    expanded_target_path,
-                    pattern_count
+                    expanded_target_path, pattern_count
                 );
                 audit.log_info(&msg);
                 if cli.verbose {
@@ -436,8 +447,7 @@ fn run(no_args: bool) -> Result<()> {
 
     // ── ZIP archive ──────────────────────────────────────────────────────────
     if cli.zip {
-        let zip_path = create_zip(&output_base)
-            .context("failed to create ZIP archive")?;
+        let zip_path = create_zip(&output_base).context("failed to create ZIP archive")?;
         ui::print_info(&format!("Archive: {}", zip_path.display()));
     }
 
@@ -464,19 +474,22 @@ fn run_dry(
         }
 
         for target_path in target_paths {
-            let (resolved, pattern_count, expanded_target_path) = match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
-                Ok(value) => value,
-                Err(e) => {
-                    ui::print_warn(&format!("path resolution failed for '{}': {:#}", def.name, e));
-                    (vec![], 0, target_path.clone())
-                }
-            };
+            let (resolved, pattern_count, expanded_target_path) =
+                match resolve_source_paths_with_patterns(&target_path, vss_enabled) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        ui::print_warn(&format!(
+                            "path resolution failed for '{}': {:#}",
+                            def.name, e
+                        ));
+                        (vec![], 0, target_path.clone())
+                    }
+                };
 
             if vss_enabled {
                 ui::print_info(&format!(
                     "VSS expanded '{}' to {} pattern(s) [all snapshots + live]",
-                    expanded_target_path,
-                    pattern_count
+                    expanded_target_path, pattern_count
                 ));
             }
 
@@ -502,7 +515,12 @@ fn run_dry(
         }
     }
 
-    ui::print_dry_summary(definitions.len(), total_paths, total_bytes, unknown_size_count);
+    ui::print_dry_summary(
+        definitions.len(),
+        total_paths,
+        total_bytes,
+        unknown_size_count,
+    );
 }
 
 fn resolve_source_paths_with_patterns(
@@ -654,7 +672,9 @@ fn report_drive_discovery(
                 .map(|d| format!("{}:", d))
                 .collect::<Vec<_>>()
                 .join(", ");
-            logger.log_warn(&format!("skipping non-NTFS or inaccessible drives: {skipped}"));
+            logger.log_warn(&format!(
+                "skipping non-NTFS or inaccessible drives: {skipped}"
+            ));
         }
     }
 }
@@ -676,9 +696,7 @@ fn create_zip(output_base: &Path) -> Result<PathBuf> {
 
     // Walk every file under output_base and add it with a path relative to
     // output_base's *parent* so the archive contains e.g. HOSTNAME/Registry/...
-    let base_parent = output_base
-        .parent()
-        .unwrap_or(output_base);
+    let base_parent = output_base.parent().unwrap_or(output_base);
 
     for entry in walkdir(output_base)? {
         let rel = entry

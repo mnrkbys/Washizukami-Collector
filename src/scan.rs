@@ -19,7 +19,6 @@ pub struct ScanMatch {
     pub rules: Vec<String>,
 }
 
-
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 /// Entry point for `washi.exe scan`.
@@ -42,8 +41,7 @@ pub fn run_scan(args: ScanArgs) {
     }
 
     // Partition into scannable (absolute path) and skipped (relative/bare name).
-    let (scannable, skipped): (Vec<_>, Vec<_>) =
-        targets.iter().partition(|p| p.is_absolute());
+    let (scannable, skipped): (Vec<_>, Vec<_>) = targets.iter().partition(|p| p.is_absolute());
 
     for path in &skipped {
         crate::ui::print_warn(&format!("Not an absolute path: {}", path.display()));
@@ -135,10 +133,7 @@ pub fn collect_persistence_targets() -> Vec<PathBuf> {
 fn collect_run_key_hklm(subkey: &str) -> Vec<PathBuf> {
     #[cfg(windows)]
     {
-        collect_run_key_windows(
-            windows::Win32::System::Registry::HKEY_LOCAL_MACHINE,
-            subkey,
-        )
+        collect_run_key_windows(windows::Win32::System::Registry::HKEY_LOCAL_MACHINE, subkey)
     }
     #[cfg(not(windows))]
     {
@@ -150,10 +145,7 @@ fn collect_run_key_hklm(subkey: &str) -> Vec<PathBuf> {
 fn collect_run_key_hkcu(subkey: &str) -> Vec<PathBuf> {
     #[cfg(windows)]
     {
-        collect_run_key_windows(
-            windows::Win32::System::Registry::HKEY_CURRENT_USER,
-            subkey,
-        )
+        collect_run_key_windows(windows::Win32::System::Registry::HKEY_CURRENT_USER, subkey)
     }
     #[cfg(not(windows))]
     {
@@ -182,7 +174,7 @@ fn collect_run_key_windows(
         RegOpenKeyExW(
             hive,
             PCWSTR(subkey_w.as_ptr()),
-            None,   // uloptions — Option<u32> in windows 0.61
+            None, // uloptions — Option<u32> in windows 0.61
             KEY_READ,
             &mut hkey,
         )
@@ -225,8 +217,7 @@ fn collect_run_key_windows(
         }
 
         // Only process string values (REG_SZ == 1, REG_EXPAND_SZ == 2).
-        if REG_VALUE_TYPE(data_type_raw) == REG_SZ
-            || REG_VALUE_TYPE(data_type_raw) == REG_EXPAND_SZ
+        if REG_VALUE_TYPE(data_type_raw) == REG_SZ || REG_VALUE_TYPE(data_type_raw) == REG_EXPAND_SZ
         {
             // data_len is in bytes; convert to UTF-16 code units.
             let wchar_count = data_len as usize / 2;
@@ -387,17 +378,14 @@ fn expand_env_vars_windows(s: &str) -> String {
     // Passing None returns the required buffer size (including NUL).
     let src_w: Vec<u16> = s.encode_utf16().chain(std::iter::once(0)).collect();
 
-    let needed = unsafe {
-        ExpandEnvironmentStringsW(PCWSTR(src_w.as_ptr()), None)
-    } as usize;
+    let needed = unsafe { ExpandEnvironmentStringsW(PCWSTR(src_w.as_ptr()), None) } as usize;
     if needed == 0 {
         return s.to_owned();
     }
 
     let mut dst_w = vec![0u16; needed];
-    let written = unsafe {
-        ExpandEnvironmentStringsW(PCWSTR(src_w.as_ptr()), Some(&mut dst_w))
-    } as usize;
+    let written =
+        unsafe { ExpandEnvironmentStringsW(PCWSTR(src_w.as_ptr()), Some(&mut dst_w)) } as usize;
     if written == 0 {
         return s.to_owned();
     }
@@ -438,7 +426,8 @@ fn run_yara_scan(yara_path: &Path, rules: &Path, targets: &[&PathBuf]) -> Vec<Sc
 
     let output = Command::new(yara_path)
         .arg("scan")
-        .arg("--output-format").arg("json")
+        .arg("--output-format")
+        .arg("json")
         .arg("--scan-list")
         .arg(rules)
         .arg(&list_path)
@@ -521,7 +510,8 @@ fn create_infected_zip(zip_path: &Path, matches: &[ScanMatch]) -> anyhow::Result
         }
     }
 
-    zip.finish().map_err(|e| anyhow::anyhow!("finalise zip: {e}"))?;
+    zip.finish()
+        .map_err(|e| anyhow::anyhow!("finalise zip: {e}"))?;
     Ok(())
 }
 
@@ -580,10 +570,7 @@ fn parse_yara_json(json: &str) -> Option<Vec<ScanMatch>> {
 
 /// Find `key` in `json`, then extract and return the JSON string value that
 /// follows it, along with the remaining input after the closing quote.
-fn extract_json_string_for_key<'a>(
-    json: &'a str,
-    key: &str,
-) -> Option<(String, &'a str)> {
+fn extract_json_string_for_key<'a>(json: &'a str, key: &str) -> Option<(String, &'a str)> {
     let key_pos = json.find(key)?;
     let after_key = &json[key_pos + key.len()..];
     // Skip whitespace and the colon separator.

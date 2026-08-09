@@ -4,7 +4,7 @@
 /// ([`StandardCollector`] and [`RawCollector`]), and the top-level
 /// [`collect_artifact`] dispatcher that applies the File → NTFS fallback
 /// strategy described in `CLAUDE.md`.
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -84,8 +84,8 @@ impl StandardCollector {
         let mut src = File::open(open_path)
             .with_context(|| format!("cannot open '{}'", open_path.display()))?;
 
-        let out = File::create(dest)
-            .with_context(|| format!("cannot create '{}'", dest.display()))?;
+        let out =
+            File::create(dest).with_context(|| format!("cannot create '{}'", dest.display()))?;
         let mut writer = BufWriter::new(out);
 
         let (bytes, sha256) = hash_and_copy(&mut src, &mut writer)?;
@@ -101,7 +101,6 @@ impl StandardCollector {
             status: CollectionStatus::Success,
         })
     }
-
 }
 
 impl Collector for StandardCollector {
@@ -188,7 +187,11 @@ impl RawCollector {
         let (bytes, sha256) = reader
             .extract_file(&relative, Some(stream), dest)
             .with_context(|| {
-                format!("NTFS stream extract failed for '{}:{}'", source.display(), stream)
+                format!(
+                    "NTFS stream extract failed for '{}:{}'",
+                    source.display(),
+                    stream
+                )
             })?;
 
         Ok(CollectionResult {
@@ -221,7 +224,12 @@ pub fn collect_artifact(
     output_base: &Path,
     raw_collector: &mut RawCollector,
 ) -> CollectionResult {
-    let dest = build_dest(output_base, &def.category, source_path, def.stream.as_deref());
+    let dest = build_dest(
+        output_base,
+        &def.category,
+        source_path,
+        def.stream.as_deref(),
+    );
 
     // Alternate Data Stream artifacts can only be read via NTFS raw access.
     if let Some(stream) = &def.stream {
@@ -231,20 +239,18 @@ pub fn collect_artifact(
     }
 
     match def.method {
-        CollectionMethod::NTFS => {
-            raw_collector
-                .collect(source_path, &dest)
-                .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::NTFS, e))
-        }
+        CollectionMethod::NTFS => raw_collector
+            .collect(source_path, &dest)
+            .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::NTFS, e)),
 
         CollectionMethod::File => {
             let mut std_col = StandardCollector;
 
             // VSS snapshot paths are collected via standard file API.
             if vss::is_snapshot_path(source_path) {
-                return std_col
-                    .collect(source_path, &dest)
-                    .unwrap_or_else(|e| into_failed_result(source_path, &dest, CollectionMethod::File, e));
+                return std_col.collect(source_path, &dest).unwrap_or_else(|e| {
+                    into_failed_result(source_path, &dest, CollectionMethod::File, e)
+                });
             }
 
             match std_col.collect(source_path, &dest) {
@@ -257,12 +263,9 @@ pub fn collect_artifact(
                             r.fell_back = true;
                             r
                         }
-                        Err(e2) => into_failed_result(
-                            source_path,
-                            &dest,
-                            CollectionMethod::NTFS,
-                            e2,
-                        ),
+                        Err(e2) => {
+                            into_failed_result(source_path, &dest, CollectionMethod::NTFS, e2)
+                        }
                     }
                 }
 
@@ -448,10 +451,12 @@ fn hash_and_copy<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> Result<(u
 
 /// Format a byte slice as a lowercase hexadecimal string.
 fn hex_string(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
-        s.push_str(&format!("{:02x}", b));
-        s
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            s.push_str(&format!("{:02x}", b));
+            s
+        })
 }
 
 // ── Error classification ──────────────────────────────────────────────────────
@@ -535,9 +540,9 @@ mod tests {
 
     #[test]
     fn extract_volume_parses_vss_snapshot_path() {
-        let (vol, rel) = extract_volume(
-            Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM"),
-        )
+        let (vol, rel) = extract_volume(Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3\Windows\System32\config\SAM",
+        ))
         .unwrap();
         assert_eq!(vol, r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy3");
         assert_eq!(rel, PathBuf::from(r"Windows\System32\config\SAM"));
@@ -545,7 +550,10 @@ mod tests {
 
     #[test]
     fn extract_volume_parses_vss_snapshot_root_meta_file() {
-        let (vol, rel) = extract_volume(Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2\$MFT")).unwrap();
+        let (vol, rel) = extract_volume(Path::new(
+            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2\$MFT",
+        ))
+        .unwrap();
         assert_eq!(vol, r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy2");
         assert_eq!(rel, PathBuf::from(r"$MFT"));
     }
@@ -566,9 +574,7 @@ mod tests {
     #[test]
     fn build_dest_stream_keeps_vss_prefix_and_suffix() {
         let base = Path::new("output/HOST");
-        let src = Path::new(
-            r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\$Extend\$UsnJrnl",
-        );
+        let src = Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy12\$Extend\$UsnJrnl");
         let dest = build_dest(base, "NTFS", src, Some("$J"));
         assert_eq!(
             dest,

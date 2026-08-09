@@ -80,7 +80,11 @@ pub fn run_winpmem(exe_dir: &Path, output_base: &Path, audit: &mut AuditLogger) 
 
     let dump_path = output_base.join("memory.dmp");
     audit.log_tool_start(&winpmem, &dump_path);
-    println!("[*] Memory dump : {} -> {}", winpmem.display(), dump_path.display());
+    println!(
+        "[*] Memory dump : {} -> {}",
+        winpmem.display(),
+        dump_path.display()
+    );
 
     let status = std::process::Command::new(&winpmem)
         .arg(&dump_path)

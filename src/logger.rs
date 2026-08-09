@@ -11,10 +11,10 @@
 
 use anyhow::{Context, Result};
 use chrono::Local;
+use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::ffi::OsStr;
 
 use crate::collector::{CollectionResult, CollectionStatus};
 use crate::config::CollectionMethod;
@@ -27,8 +27,9 @@ pub struct AuditLogger {
 impl AuditLogger {
     /// Open (or create) `<output_base>/collection.log` for appending.
     pub fn new(output_base: &Path) -> Result<Self> {
-        std::fs::create_dir_all(output_base)
-            .with_context(|| format!("cannot create output directory '{}'", output_base.display()))?;
+        std::fs::create_dir_all(output_base).with_context(|| {
+            format!("cannot create output directory '{}'", output_base.display())
+        })?;
 
         let log_path = output_base.join("collection.log");
         let file = OpenOptions::new()
@@ -165,7 +166,10 @@ impl AuditLogger {
         let name = tool_name(tool);
         let line = format!(
             "{} [TOOL ] [{:<12}] Starting: {} -> {}",
-            timestamp(), name, tool.display(), output.display(),
+            timestamp(),
+            name,
+            tool.display(),
+            output.display(),
         );
         self.write_line(&line);
     }
@@ -175,7 +179,10 @@ impl AuditLogger {
         let name = tool_name(tool);
         let line = format!(
             "{} [TOOL ] [{:<12}] Success (exit {}): {}",
-            timestamp(), name, exit_code, tool.display(),
+            timestamp(),
+            name,
+            exit_code,
+            tool.display(),
         );
         self.write_line(&line);
     }
@@ -185,7 +192,10 @@ impl AuditLogger {
         let name = tool_name(tool);
         let line = format!(
             "{} [TOOL ] [{:<12}] Failed  (exit {}): {}",
-            timestamp(), name, exit_code, tool.display(),
+            timestamp(),
+            name,
+            exit_code,
+            tool.display(),
         );
         self.write_line(&line);
     }
@@ -203,7 +213,5 @@ fn timestamp() -> String {
 }
 
 fn tool_name(tool: &Path) -> &str {
-    tool.file_stem()
-        .and_then(OsStr::to_str)
-        .unwrap_or("tool")
+    tool.file_stem().and_then(OsStr::to_str).unwrap_or("tool")
 }
