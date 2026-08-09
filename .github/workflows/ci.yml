@@ -35,6 +35,17 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-gnu
           targets: x86_64-pc-windows-gnu
+          # This action installs with --profile minimal, which does not include
+          # rustfmt. Without this line the fmt step below fails with
+          # "'rustfmt' is not installed".
+          components: rustfmt
+
+      # rustfmt only parses and rewrites source text — it neither compiles nor
+      # links — so it needs no target and no MinGW. Running it here, before the
+      # MSYS2 install, fails a badly formatted PR in seconds instead of after
+      # the whole toolchain is in place.
+      - name: cargo fmt --check
+        run: cargo fmt --check
 
       - name: Install MSYS2 / MinGW-w64
         uses: msys2/setup-msys2@v2
@@ -59,22 +70,15 @@ jobs:
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc
         run: cargo build --release --target x86_64-pc-windows-gnu
 
-# Not gated yet — both fail against the current tree, and fixing them means
-# touching source, which is out of scope for introducing CI. A check that is
-# red from day one teaches people to ignore CI, so each needs its own PR first:
+# Still not gated. A check that is red from day one teaches people to ignore
+# CI, so anything added here has to pass against main first:
 #
-#   cargo fmt --check   1002 lines of diff. The codebase is deliberately
-#                       hand-aligned in places (e.g. `let rc_path   = ...` in
-#                       build.rs), so enabling this means accepting a
-#                       whole-tree reformat. Run `cargo fmt`, review, merge,
-#                       then add the step here.
+#   cargo clippy   9 warnings against main: 4x collapsible_if,
+#                  3x useless_format, 1x too_many_arguments (8/7),
+#                  1x upper_case_acronyms (NTFS). Small enough to fix in one
+#                  pass, after which `cargo clippy -- -D warnings` can be
+#                  added as a gate — the same order fmt went through.
 #
-#   cargo clippy        9 warnings, all trivial: 4x collapsible_if,
-#                       3x useless_format, 1x too_many_arguments (8/7),
-#                       1x upper_case_acronyms (NTFS). Small enough to fix in
-#                       one pass, after which `cargo clippy -- -D warnings`
-#                       can be added as a gate.
-#
-# `--locked` would now pass — Cargo.lock was brought back in sync with
-# Cargo.toml in #14 — but whether to enforce it is a separate decision about
-# how strictly the lock should bind CI, so it is left out of this PR too.
+#   --locked       Would pass, now that Cargo.lock was brought back in sync
+#                  with Cargo.toml in #14, but how strictly the lock should
+#                  bind CI is a separate decision.
