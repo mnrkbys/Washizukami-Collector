@@ -294,10 +294,10 @@ fn run(no_args: bool) -> Result<()> {
         if cat_changed {
             if !cli.verbose {
                 // Flush previous category summary (only if something was collected).
-                if let Some(ref cat) = current_cat {
-                    if cat_ok > 0 || cat_skip > 0 {
-                        ui::print_category_line(cat, cat_ok, cat_skip, cat_bytes);
-                    }
+                if let Some(ref cat) = current_cat
+                    && (cat_ok > 0 || cat_skip > 0)
+                {
+                    ui::print_category_line(cat, cat_ok, cat_skip, cat_bytes);
                 }
                 cat_ok = 0;
                 cat_skip = 0;
@@ -422,12 +422,11 @@ fn run(no_args: bool) -> Result<()> {
     }
 
     // Flush the last category line (default mode).
-    if !cli.verbose {
-        if let Some(ref cat) = current_cat {
-            if cat_ok > 0 || cat_skip > 0 {
-                ui::print_category_line(cat, cat_ok, cat_skip, cat_bytes);
-            }
-        }
+    if !cli.verbose
+        && let Some(ref cat) = current_cat
+        && (cat_ok > 0 || cat_skip > 0)
+    {
+        ui::print_category_line(cat, cat_ok, cat_skip, cat_bytes);
     }
 
     // ── Summary ──────────────────────────────────────────────────────────────

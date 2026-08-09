@@ -59,6 +59,13 @@ static EMBEDDED_SOURCES: &[(&str, &str)] = &[
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CollectionMethod {
     /// Raw NTFS / MFT traversal — bypasses OS file locks.
+    ///
+    /// Kept as `NTFS` rather than the `Ntfs` clippy would prefer: this variant
+    /// name is the on-disk spelling in every artifact definition
+    /// (`method: NTFS`), so renaming it would be a breaking change to the YAML
+    /// schema and to every `config.yaml` in the field. NTFS is also how the
+    /// filesystem is written everywhere else in forensics.
+    #[allow(clippy::upper_case_acronyms)]
     NTFS,
     /// Standard OS file-system copy (`std::fs`).
     File,

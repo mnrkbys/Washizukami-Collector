@@ -31,6 +31,11 @@ fn config_row(label: &str, value: &str) {
 // ── Headers ───────────────────────────────────────────────────────────────────
 
 /// Print the startup header for collection mode.
+///
+/// Eight parameters, one over clippy's threshold. They are the values the
+/// header prints and nothing else, so grouping them into a struct would add a
+/// type that exists solely to satisfy the lint.
+#[allow(clippy::too_many_arguments)]
 pub fn print_header(
     hostname: &str,
     volume_override: Option<char>,
@@ -43,8 +48,7 @@ pub fn print_header(
 ) {
     let version = env!("CARGO_PKG_VERSION");
     println!(
-        "\n{}  {}  {}",
-        "🦅",
+        "\n🦅  {}  {}",
         "Washizukami Forensic Collector".bold().cyan(),
         format!("v{version}").dimmed(),
     );
@@ -83,8 +87,7 @@ pub fn print_header(
 pub fn print_scan_header(yara_path: &Path, rules: &Path, output: &Path) {
     let version = env!("CARGO_PKG_VERSION");
     println!(
-        "\n{}  {}  {}",
-        "🦅",
+        "\n🦅  {}  {}",
         "Washizukami  ·  YARA Scan".bold().cyan(),
         format!("v{version}").dimmed(),
     );
@@ -232,8 +235,7 @@ pub fn print_summary(
 ) {
     println!("{}", sep());
     println!(
-        "  {}  {}  ·  OK {}  ·  Skipped {}  ·  Failed {}",
-        "✨",
+        "  ✨  {}  ·  OK {}  ·  Skipped {}  ·  Failed {}",
         "Collection complete".bold(),
         n_ok.to_string().green(),
         if n_skip > 0 {
