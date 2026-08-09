@@ -31,6 +31,14 @@ This tool was inspired by [CDIR-C](https://github.com/CyberDefenseInstitute/CDIR
 - [Velociraptor](https://github.com/Velocidex/velociraptor) / [KAPE](https://www.kroll.com/en/services/cyber-risk/incident-response-litigation-support/kroll-artifact-parser-extractor-kape) and other forensic frameworks
 - Ingestion into SIEMs such as ELK Stack / Splunk
 
+### Project Philosophy
+
+> **Keep it simple. Keep it reliable.**
+
+Washizukami is not aiming to become a general-purpose DFIR platform. It does one job — collecting evidence during the first hours of a Windows incident — and leaves analysis to the tools built for it. New default behaviour is added sparingly, and the command line stays small enough to use correctly under pressure.
+
+What that restraint buys is the other half: collection that is dependable, reproducible, and maintainable. Every default artifact is one we intend to keep verifying, which is why the definition set is deliberately smaller than it could be.
+
 ---
 
 ## Features
@@ -571,10 +579,12 @@ We occasionally receive insinuations that "the author's personal preferences may
 
 ## AI-Assisted Development
 
-This project was developed with the assistance of two powerful AI assistants: **Claude Code** and **Google Gemini**.
+Design decisions, review, and final judgement on this project rest with its maintainer. AI assistants are used as development tools, and this section is here for transparency about that.
 
-- **Claude Code**: Primarily assisted with Rust code structure design, refactoring, and implementation guidance for Windows-specific system programming.
-- **Google Gemini**: Assisted with overall project roadmap planning, documentation, and served as a sounding board for troubleshooting.
+- **Claude Code** — Repository-level implementation: Rust code changes, refactoring, tests, and Git / GitHub workflow execution.
+- **ChatGPT** — Roadmap planning, architecture and design discussion, critical review, task decomposition, release planning, and working out design principles and project direction.
+
+Every change is reviewed and accepted by the maintainer before it lands.
 
 ---
 
